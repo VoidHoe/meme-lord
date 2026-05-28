@@ -1,0 +1,65 @@
+{
+  "name": "memedrop-overlay",
+  "version": "1.2.0",
+  "description": "Overlay Discord memes on your screen in real-time",
+  "author": "VoidHoe",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.8.3",
+    "socket.io-client": "^4.7.4"
+  },
+  "devDependencies": {
+    "electron": "28.2.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.memedrop.overlay",
+    "productName": "MemeDrop",
+    "electronVersion": "28.2.0",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "overlay.html",
+      "overlay.js",
+      "settings.html",
+      "settings.js",
+      "sender.html",
+      "sender.js",
+      "sender-preload.js",
+      "sounds/**/*",
+      "assets/**/*",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "shortcutName": "MemeDrop",
+      "runAfterFinish": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "VoidHoe",
+      "repo": "meme-lord",
+      "releaseType": "release"
+    }
+  }
+}

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>MemeDrop Settings</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 24px; margin: 0; }
+    h1 { font-size: 20px; margin-bottom: 24px; color: #7c3aed; }
+    .field { margin-bottom: 20px; }
+    label { display: block; font-size: 13px; color: #a0a0b0; margin-bottom: 6px; }
+    input[type="text"], input[type="url"] {
+      width: 100%; padding: 8px 12px; background: #2d2d44; border: 1px solid #444;
+      border-radius: 6px; color: #fff; font-size: 14px; box-sizing: border-box;
+    }
+    input[type="range"] { width: 100%; accent-color: #7c3aed; }
+    .range-row { display: flex; align-items: center; gap: 12px; }
+    .range-value { min-width: 36px; text-align: right; font-size: 13px; color: #7c3aed; }
+    button {
+      width: 100%; padding: 12px; background: #7c3aed; color: #fff; border: none;
+      border-radius: 8px; font-size: 15px; cursor: pointer; margin-top: 8px;
+    }
+    button:hover { background: #6d28d9; }
+    .status { font-size: 12px; color: #22c55e; margin-top: 8px; min-height: 16px; }
+    hr { border: none; border-top: 1px solid #333; margin: 20px 0; }
+    .hint { font-size: 11px; color: #555; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>⚡ MemeDrop Settings</h1>
+
+  <div class="field">
+    <label>URL du serveur</label>
+    <input type="url" id="serverUrl" placeholder="https://your-app.railway.app">
+  </div>
+  <div class="field">
+    <label>Pseudo Discord (pour être ciblable par tes potes)</label>
+    <input type="text" id="discordUsername" placeholder="Tanguy">
+  </div>
+
+  <hr>
+
+  <div class="field">
+    <label>Position overlay — Horizontal (%)</label>
+    <div class="range-row">
+      <input type="range" id="positionX" min="0" max="100" step="1">
+      <span class="range-value" id="positionXVal">50</span>
+    </div>
+  </div>
+  <div class="field">
+    <label>Position overlay — Vertical (%)</label>
+    <div class="range-row">
+      <input type="range" id="positionY" min="0" max="100" step="1">
+      <span class="range-value" id="positionYVal">50</span>
+    </div>
+  </div>
+  <div class="field">
+    <label>Durée d'affichage (secondes)</label>
+    <div class="range-row">
+      <input type="range" id="duration" min="1" max="10" step="1">
+      <span class="range-value" id="durationVal">5</span>s
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="field">
+    <label>Volume SFX (%)</label>
+    <div class="range-row">
+      <input type="range" id="volumeSfx" min="0" max="100" step="5">
+      <span class="range-value" id="volumeSfxVal">80</span>
+    </div>
+  </div>
+  <div class="field">
+    <label>Volume voix (%)</label>
+    <div class="range-row">
+      <input type="range" id="volumeVoice" min="0" max="100" step="5">
+      <span class="range-value" id="volumeVoiceVal">100</span>
+    </div>
+  </div>
+
+  <button id="saveBtn">💾 Sauvegarder</button>
+  <div class="status" id="status"></div>
+
+  <hr>
+
+  <button id="updateBtn" style="background:#2d2d44; margin-top:0;">🔄 Check for updates</button>
+  <div class="status" id="updateStatus"></div>
+  <script src="settings.js"></script>
+</body>
+</html>

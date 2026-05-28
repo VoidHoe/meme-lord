@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MemeDrop</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    #titlebar {
+      background: #16213e;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      -webkit-app-region: drag;
+    }
+    #titlebar span { font-weight: 700; font-size: 13px; color: #a78bfa; }
+    #titlebar small { color: #444; font-size: 11px; font-weight: normal; }
+    #close-btn {
+      -webkit-app-region: no-drag;
+      background: none; border: none; color: #555;
+      font-size: 16px; cursor: pointer; padding: 0 2px; line-height: 1;
+    }
+    #close-btn:hover { color: #fff; }
+
+    #form {
+      padding: 14px 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+
+    label {
+      display: block; font-size: 10px; color: #555;
+      margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.6px;
+    }
+
+    input[type="text"] {
+      width: 100%; background: #0f3460;
+      border: 1px solid #1e2a4a; border-radius: 6px;
+      padding: 7px 10px; color: #fff; font-size: 13px; outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus { border-color: #a78bfa; }
+    input[type="text"]::placeholder { color: #2e3a5a; }
+
+    /* ── Drop zone ──────────────────────────────────── */
+    #drop-zone {
+      width: 100%;
+      background: #0f3460;
+      border: 1px dashed #2a3a5a;
+      border-radius: 6px;
+      padding: 10px;
+      color: #2e3a5a;
+      font-size: 12px;
+      text-align: center;
+      cursor: default;
+      transition: all 0.15s;
+      position: relative;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    #drop-zone.drag-over {
+      border-color: #a78bfa;
+      background: rgba(167,139,250,0.1);
+      color: #a78bfa;
+    }
+    #drop-zone.has-url {
+      border-style: solid;
+      border-color: #1e2a4a;
+      color: #e0e0e0;
+      font-size: 11px;
+      text-align: left;
+      justify-content: flex-start;
+    }
+    #drop-zone.uploading { color: #888; }
+
+    #url-text {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+    #clear-url {
+      background: none; border: none; color: #555;
+      cursor: pointer; font-size: 14px; padding: 0; flex-shrink: 0;
+      line-height: 1;
+    }
+    #clear-url:hover { color: #f87171; }
+
+    /* Also accept typed/pasted URLs */
+    #url-manual {
+      font-size: 11px;
+      color: #2e3a5a;
+      margin-top: 3px;
+      cursor: text;
+    }
+    #url-input-wrap { position: relative; }
+    #url-paste {
+      width: 100%; background: #0a2040;
+      border: 1px solid #1e2a4a; border-radius: 6px;
+      padding: 5px 10px; color: #888; font-size: 11px; outline: none;
+      transition: border-color 0.15s; margin-top: 4px;
+    }
+    #url-paste:focus { border-color: #a78bfa; color: #fff; }
+    #url-paste::placeholder { color: #2e3a5a; }
+
+    /* ── Target dropdown ────────────────────────────── */
+    .target-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    select#target {
+      flex: 1;
+      background: #0f3460;
+      border: 1px solid #1e2a4a;
+      border-radius: 6px;
+      padding: 7px 10px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+      cursor: pointer;
+    }
+    select#target:focus { border-color: #a78bfa; }
+    select#target option { background: #16213e; }
+
+    #refresh-btn {
+      -webkit-app-region: no-drag;
+      background: #0f3460;
+      border: 1px solid #1e2a4a;
+      border-radius: 6px;
+      color: #666;
+      font-size: 15px;
+      cursor: pointer;
+      padding: 6px 10px;
+      transition: all 0.15s;
+      line-height: 1;
+    }
+    #refresh-btn:hover { border-color: #a78bfa; color: #a78bfa; }
+    #refresh-btn.spinning { animation: spin 0.5s linear; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* ── Effects ────────────────────────────────────── */
+    #effects-row { display: flex; gap: 5px; flex-wrap: wrap; }
+    .chip {
+      padding: 3px 10px; border-radius: 20px;
+      border: 1px solid #1e2a4a; background: #0f3460;
+      color: #555; font-size: 11px; cursor: pointer;
+      transition: all 0.15s; -webkit-app-region: no-drag;
+    }
+    .chip:hover { border-color: #a78bfa; color: #bbb; }
+    .chip.active { background: #a78bfa; border-color: #a78bfa; color: #fff; }
+
+    /* ── Voice row ──────────────────────────────────── */
+    #voice-row { display: flex; align-items: center; gap: 10px; }
+    #mic-btn {
+      -webkit-app-region: no-drag;
+      background: #0f3460; border: 1px solid #1e2a4a;
+      border-radius: 8px; color: #888; font-size: 13px;
+      cursor: pointer; padding: 7px 14px;
+      display: flex; align-items: center; gap: 6px;
+      transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
+    }
+    #mic-btn:hover { border-color: #a78bfa; color: #ccc; }
+    #mic-btn.recording {
+      background: rgba(239,68,68,0.15); border-color: #ef4444; color: #ef4444;
+      animation: recPulse 0.9s ease-in-out infinite;
+    }
+    #mic-btn.has-audio { background: rgba(74,222,128,0.1); border-color: #4ade80; color: #4ade80; }
+    @keyframes recPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+    #voice-label { font-size: 11px; color: #444; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #voice-label.active { color: #4ade80; }
+
+    /* ── Send ───────────────────────────────────────── */
+    #send-btn {
+      background: #a78bfa; color: #fff; border: none;
+      border-radius: 8px; padding: 10px; font-size: 14px;
+      font-weight: 700; cursor: pointer; transition: background 0.15s;
+    }
+    #send-btn:hover  { background: #8b5cf6; }
+    #send-btn:active { background: #7c3aed; }
+    #send-btn:disabled { background: #333; color: #555; cursor: default; }
+
+    #status { text-align: center; font-size: 12px; color: #444; min-height: 14px; }
+    #status.ok  { color: #4ade80; }
+    #status.err { color: #f87171; }
+  </style>
+</head>
+<body>
+  <div id="titlebar">
+    <span>🎭 MemeDrop <small>Ctrl+Shift+D</small></span>
+    <button id="close-btn">✕</button>
+  </div>
+
+  <div id="form">
+
+    <!-- Media drop zone -->
+    <div>
+      <label>Media — drag a file or paste a URL</label>
+      <div id="drop-zone">
+        <span>📎</span>
+        <span id="url-text">Drop image, GIF, or video here…</span>
+        <button id="clear-url" style="display:none">✕</button>
+      </div>
+      <input id="url-paste" type="text" placeholder="…or paste a URL directly" />
+    </div>
+
+    <!-- Target dropdown -->
+    <div>
+      <label>Target — optional</label>
+      <div class="target-row">
+        <select id="target">
+          <option value="">Everyone</option>
+        </select>
+        <button id="refresh-btn" title="Refresh user list">↻</button>
+      </div>
+    </div>
+
+    <!-- Caption -->
+    <div>
+      <label>Caption — optional</label>
+      <input id="caption" type="text" placeholder="Text shown under the drop…" />
+    </div>
+
+    <!-- Effects -->
+    <div>
+      <label>Effects — optional</label>
+      <div id="effects-row">
+        <div class="chip" data-fx="spin">spin</div>
+        <div class="chip" data-fx="fade">fade</div>
+      </div>
+    </div>
+
+    <!-- Voice note -->
+    <div>
+      <label>Voice note — optional</label>
+      <div id="voice-row">
+        <button id="mic-btn">🎤 Record</button>
+        <span id="voice-label">No recording</span>
+      </div>
+    </div>
+
+    <button id="send-btn">Send Drop</button>
+    <div id="status"></div>
+  </div>
+
+  <script src="sender.js"></script>
+</body>
+</html>

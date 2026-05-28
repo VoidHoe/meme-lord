@@ -1,0 +1,181 @@
+const container = document.getElementById('drop-container');
+const badge     = document.getElementById('queue-badge');
+
+let queue     = [];
+let isPlaying = false;
+let settings  = { positionX: 50, positionY: 50, duration: 5000, volumeSfx: 80, volumeVoice: 100 };
+
+window.memedrop.getSettings().then(s => { settings = s; applyPosition(); });
+window.memedrop.onSettingsChanged(s => { settings = s; applyPosition(); });
+
+window.memedrop.onDrop(event => {
+  queue.push(event);
+  updateBadge();
+  if (!isPlaying) processQueue();
+});
+
+function applyPosition() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const x = Math.round((settings.positionX / 100) * vw - (container.offsetWidth  || 240) / 2);
+  const y = Math.round((settings.positionY / 100) * vh - (container.offsetHeight || 180) / 2);
+  container.style.left = `${Math.max(0, x)}px`;
+  container.style.top  = `${Math.max(0, y)}px`;
+}
+
+function updateBadge() {
+  if (queue.length > 0) {
+    badge.style.display  = 'block';
+    badge.textContent    = `+${queue.length} en attente`;
+  } else {
+    badge.style.display  = 'none';
+  }
+}
+
+async function processQueue() {
+  if (queue.length === 0) { isPlaying = false; return; }
+  isPlaying = true;
+
+  const event = queue.shift();
+  updateBadge();
+
+  // Reset container
+  container.innerHTML      = '';
+  container.style.opacity  = '1';
+  container.style.animation = '';
+  container.style.display  = 'flex';
+
+  const hasFade = (event.effects || []).includes('fade');
+  const hasSpin = (event.effects || []).includes('spin');
+
+  if (event.media) {
+    const el = buildMediaElement(event.media);
+    if (el) {
+      if (hasSpin) el.classList.add('fx-spin');
+      container.appendChild(el);
+      await waitForMedia(el);
+    }
+  }
+
+  if (event.caption) {
+    const cap = document.createElement('div');
+    cap.className = 'drop-caption';
+    cap.textContent = event.caption;
+    container.appendChild(cap);
+  }
+
+  applyPosition();
+
+  // ── Fade in ───────────────────────────────────────────────────
+  if (hasFade) {
+    container.style.animation = 'fadeIn 3s ease forwards';
+  }
+
+  // ── Wait for display duration (+ audio if any) ────────────────
+  const duration = settings.duration || 5000;
+
+  if (event.audio) {
+    const audioEnd = playAudio(event.audio);
+    await Promise.race([
+      Promise.all([audioEnd, sleep(duration)]),
+      sleep(10000),
+    ]);
+  } else {
+    await sleep(duration);
+  }
+
+  // ── Fade out ──────────────────────────────────────────────────
+  if (hasFade) {
+    container.style.animation = 'fadeOut 3s ease forwards';
+    await sleep(3000);
+  }
+
+  container.style.display   = 'none';
+  container.style.animation = '';
+  container.innerHTML       = '';
+  await sleep(200);
+  processQueue();
+}
+
+function buildMediaElement(media) {
+  switch (media.type) {
+    case 'image':
+    case 'gif': {
+      const img = document.createElement('img');
+      img.src = media.url;
+      return img;
+    }
+    case 'video': {
+      const video = document.createElement('video');
+      video.src       = media.url;
+      video.autoplay  = true;
+      video.loop      = true;
+      video.muted     = true;
+      video.playsInline = true;
+      return video;
+    }
+    case 'youtube': {
+      const iframe = document.createElement('iframe');
+      const videoId = extractYoutubeId(media.url);
+      iframe.src   = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`;
+      iframe.allow = 'autoplay';
+      return iframe;
+    }
+    case 'emoji': {
+      const div = document.createElement('div');
+      div.className  = 'emoji-display';
+      div.textContent = media.url;
+      return div;
+    }
+    default: return null;
+  }
+}
+
+function playAudio(audio) {
+  return new Promise((resolve) => {
+    if (audio.type === 'sfx') {
+      const name = audio.url.replace('sfx:', '');
+      const a = new Audio(`sounds/${name}.mp3`);
+      a.volume  = (settings.volumeSfx || 80) / 100;
+      a.onended = resolve;
+      a.onerror = resolve;
+      a.play().catch(() => resolve());
+      return;
+    }
+    if (audio.type === 'voice' && audio.url) {
+      const a = new Audio(audio.url);
+      a.volume  = (settings.volumeVoice || 100) / 100;
+      a.onended = resolve;
+      a.onerror = resolve;
+      a.play().catch(() => resolve());
+      return;
+    }
+    resolve();
+  });
+}
+
+function waitForMedia(el) {
+  return new Promise((resolve) => {
+    const done = () => resolve();
+    if (el.tagName === 'IMG') {
+      if (el.complete && el.naturalWidth > 0) { done(); return; }
+      el.onload  = done;
+      el.onerror = done;
+    } else if (el.tagName === 'VIDEO') {
+      el.oncanplay = done;
+      el.onerror   = done;
+    } else {
+      done(); return;
+    }
+    setTimeout(done, 4000);
+  });
+}
+
+function extractYoutubeId(url) {
+  const match = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/);
+  return match ? match[1] : '';
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}

@@ -1,0 +1,40 @@
+<h2>Comment vos potes se connectent ?</h2>
+<p class="subtitle">Ce choix définit toute l'architecture du projet</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>🌐 Internet — Serveur central</h3>
+      <p>Un petit serveur Node.js hébergé en ligne (Railway, Fly.io ~gratis). Tout le monde se connecte à une URL. Fonctionne depuis n'importe où, même si vous jouez pas dans la même pièce.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>✅ Pour</h4><ul><li>Marche partout (online)</li><li>Pas de config réseau</li><li>Scalable</li></ul></div>
+        <div class="cons"><h4>⚠️ Contre</h4><ul><li>Faut déployer un serveur</li><li>Latence réseau</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>🏠 LAN — Un des potes héberge</h3>
+      <p>L'app de l'hôte embarque le serveur WebSocket. Les autres entrent son IP local (192.168.x.x). Parfait pour les sessions gaming en réseau local ou via VPN (Hamachi, ZeroTier).</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>✅ Pour</h4><ul><li>Zéro coût / hébergement</li><li>Ultra rapide (LAN)</li><li>100% local</li></ul></div>
+        <div class="cons"><h4>⚠️ Contre</h4><ul><li>Même réseau requis (ou VPN)</li><li>L'hôte doit lancer l'app en premier</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>🔀 Hybride — Les deux</h3>
+      <p>L'app peut fonctionner en mode "hôte local" ou se connecter à un serveur distant selon la config. Le plus flexible mais aussi le plus de dev.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>✅ Pour</h4><ul><li>Maximum de flexibilité</li><li>LAN = 0 latence, cloud = partout</li></ul></div>
+        <div class="cons"><h4>⚠️ Contre</h4><ul><li>Plus de code à écrire</li><li>Config plus complexe</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

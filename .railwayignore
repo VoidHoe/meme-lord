@@ -1,0 +1,5 @@
+node_modules/
+overlay/
+.env
+audio_cache/
+*.log

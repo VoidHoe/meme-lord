@@ -1,0 +1,37 @@
+<h2>Quel type d'audio tu veux ?</h2>
+<p class="subtitle">L'audio c'est la feature principale que tu veux ajouter par rapport à MemeDrop</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>🎤 Message vocal live</h3>
+      <p>Tu enregistres un message vocal dans Discord (note vocale), le bot le capte et le joue en overlay sur tous les écrans. Comme un walkie-talkie de mème.</p>
+      <div style="margin-top:10px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;font-size:13px;">
+        <strong>Exemple :</strong> tu envoies un voice message Discord dans le channel → ça s'affiche avec une image + ta voix qui dit "GG EZ" sur l'écran de tes potes
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>🔊 Sons / SFX prédéfinis</h3>
+      <p>Une bibliothèque de sons qu'on charge dans l'app (boom, air horn, voix TTS, etc.). Tu tapes <code>/sound airhorn</code> dans Discord pour déclencher.</p>
+      <div style="margin-top:10px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;font-size:13px;">
+        <strong>Exemple :</strong> <code>/drop pepehands.gif + /sound sadviolin</code> → GIF + son triste sur tous les écrans
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>🎵 Les deux</h3>
+      <p>Messages vocaux live <strong>et</strong> bibliothèque de sons. Tu peux aussi attacher un fichier audio à n'importe quel drop d'image/GIF.</p>
+      <div style="margin-top:10px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;font-size:13px;">
+        <strong>Exemple :</strong> <code>/drop image + audio</code> → image + son jouent ensemble. Ou juste <code>/sound</code> pour un son seul.
+      </div>
+    </div>
+  </div>
+</div>
