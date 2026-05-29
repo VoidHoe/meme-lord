@@ -187,11 +187,19 @@ ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audi
     let media = null;
     if (url && url.trim()) {
       const clean = url.trim();
-      const ext = clean.split('.').pop().split('?')[0].toLowerCase();
-      let type = 'image';
-      if (ext === 'gif')                      type = 'gif';
-      else if (['mp4', 'webm'].includes(ext)) type = 'video';
-      media = { type, url: clean };
+      const tiktokMatch  = clean.match(/tiktok\.com\/@[\w.]+\/video\/(\d+)/);
+      const twitterMatch = clean.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
+      if (tiktokMatch) {
+        media = { type: 'tiktok', url: `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}` };
+      } else if (twitterMatch) {
+        media = { type: 'twitter', url: `https://platform.twitter.com/embed/Tweet.html?id=${twitterMatch[1]}&theme=dark&dnt=true` };
+      } else {
+        const ext = clean.split('.').pop().split('?')[0].toLowerCase();
+        let type = 'image';
+        if (ext === 'gif')                      type = 'gif';
+        else if (['mp4', 'webm'].includes(ext)) type = 'video';
+        media = { type, url: clean };
+      }
     }
 
     const event = {

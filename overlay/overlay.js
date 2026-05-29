@@ -124,6 +124,20 @@ function buildMediaElement(media) {
       iframe.allow = 'autoplay';
       return iframe;
     }
+    case 'tiktok': {
+      const iframe = document.createElement('iframe');
+      iframe.src       = media.url;
+      iframe.allow     = 'autoplay; encrypted-media; picture-in-picture';
+      iframe.className = 'embed-tiktok';
+      return iframe;
+    }
+    case 'twitter': {
+      const iframe = document.createElement('iframe');
+      iframe.src       = media.url;
+      iframe.allow     = 'autoplay; encrypted-media';
+      iframe.className = 'embed-twitter';
+      return iframe;
+    }
     case 'emoji': {
       const div = document.createElement('div');
       div.className  = 'emoji-display';

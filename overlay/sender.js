@@ -104,7 +104,14 @@ urlPaste.addEventListener('keydown', (e) => { if (e.key === 'Enter') { applyPast
 urlPaste.addEventListener('blur', applyPastedUrl);
 function applyPastedUrl() {
   const v = urlPaste.value.trim();
-  if (v.startsWith('http')) setMediaUrl(v, v);
+  if (!v.startsWith('http')) return;
+  if (/tiktok\.com\/@[\w.]+\/video\/\d+/.test(v)) {
+    setMediaUrl(v, '🎵 TikTok video'); return;
+  }
+  if (/(?:twitter\.com|x\.com)\/\w+\/status\/\d+/.test(v)) {
+    setMediaUrl(v, '🐦 Twitter / X post'); return;
+  }
+  setMediaUrl(v, v);
 }
 
 // ── Effects ───────────────────────────────────────────────────────────────────
