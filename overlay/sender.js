@@ -111,6 +111,9 @@ function applyPastedUrl() {
   if (/(?:twitter\.com|x\.com)\/\w+\/status\/\d+/.test(v)) {
     setMediaUrl(v, '🐦 Twitter / X post'); return;
   }
+  if (/(?:youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/.test(v)) {
+    setMediaUrl(v, '▶️ YouTube video'); return;
+  }
   setMediaUrl(v, v);
 }
 

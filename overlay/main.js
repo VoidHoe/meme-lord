@@ -183,16 +183,41 @@ ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audi
   try {
     const serverUrl = store.get('serverUrl') || 'https://memelord-production-3bbf.up.railway.app';
 
-    // Détecter le type de media depuis l'extension de l'URL
+    // Détecter le type de media depuis l'URL
     let media = null;
     if (url && url.trim()) {
       const clean = url.trim();
       const tiktokMatch  = clean.match(/tiktok\.com\/@[\w.]+\/video\/(\d+)/);
-      const twitterMatch = clean.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/);
+      const twitterMatch = clean.match(/(?:twitter\.com|x\.com)\/([\w]+)\/status\/(\d+)/);
+      const youtubeMatch = clean.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+
       if (tiktokMatch) {
-        media = { type: 'tiktok', url: `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}` };
+        try {
+          const r = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(clean)}`);
+          const j = await r.json();
+          if (j.code === 0 && j.data?.play) media = { type: 'video', url: j.data.play };
+        } catch(e) {}
+        if (!media) media = { type: 'tiktok', url: `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}` };
+
       } else if (twitterMatch) {
-        media = { type: 'twitter', url: `https://platform.twitter.com/embed/Tweet.html?id=${twitterMatch[1]}&theme=dark&dnt=true` };
+        try {
+          const [, username, tweetId] = twitterMatch;
+          const r = await fetch(`https://api.fxtwitter.com/${username}/status/${tweetId}`);
+          const j = await r.json();
+          const videos = j.tweet?.media?.videos || [];
+          const best   = videos.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+          if (best?.url) {
+            media = { type: 'video', url: best.url };
+          } else {
+            const photo = (j.tweet?.media?.photos || [])[0];
+            if (photo?.url) media = { type: 'image', url: photo.url };
+          }
+        } catch(e) {}
+        if (!media) media = { type: 'twitter', url: `https://platform.twitter.com/embed/Tweet.html?id=${twitterMatch[2]}&theme=dark&dnt=true` };
+
+      } else if (youtubeMatch) {
+        media = { type: 'youtube', url: clean };
+
       } else {
         const ext = clean.split('.').pop().split('?')[0].toLowerCase();
         let type = 'image';
