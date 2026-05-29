@@ -112,7 +112,8 @@ function buildMediaElement(media) {
       video.src       = media.url;
       video.autoplay  = true;
       video.loop      = true;
-      video.muted     = true;
+      video.muted     = false;
+      video.volume    = (settings.volumeSfx || 80) / 100;
       video.playsInline = true;
       return video;
     }
