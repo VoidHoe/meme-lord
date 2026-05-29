@@ -1,4 +1,4 @@
-const fields      = ['serverUrl', 'discordUsername', 'positionX', 'positionY', 'duration', 'volumeSfx', 'volumeVoice'];
+const fields      = ['serverUrl', 'discordUsername', 'positionX', 'positionY', 'duration', 'volumeSfx', 'volumeVoice', 'giphyApiKey', 'micDeviceId'];
 const rangeFields = ['positionX', 'positionY', 'duration', 'volumeSfx', 'volumeVoice'];
 
 window.memedrop.getSettings().then(settings => {
@@ -25,6 +25,25 @@ function updateRangeDisplays() {
     if (input && display) display.textContent = input.value;
   });
 }
+
+async function populateMicDevices() {
+  const sel = document.getElementById('micDeviceId');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(t => t.stop());
+  } catch(e) {}
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const saved   = sel.value;
+  sel.innerHTML = '<option value="">Microphone par défaut</option>';
+  devices.filter(d => d.kind === 'audioinput').forEach(d => {
+    const opt = document.createElement('option');
+    opt.value       = d.deviceId;
+    opt.textContent = d.label || `Microphone (${d.deviceId.slice(0, 8)}…)`;
+    sel.appendChild(opt);
+  });
+  if (saved) sel.value = saved;
+}
+populateMicDevices();
 
 const updateStatus = document.getElementById('updateStatus');
 

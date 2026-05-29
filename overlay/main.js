@@ -14,6 +14,9 @@ const store = new Store({
     volumeSfx: 80,
     volumeVoice: 100,
     effects: true,
+    giphyApiKey: 'AMwifjHTUcKxrxHdjcDSWqs6uLrCXCNk',
+    micDeviceId: '',
+    favorites: [],
   },
 });
 
@@ -79,12 +82,14 @@ function createSenderWindow() {
   }
 
   senderWindow = new BrowserWindow({
-    width: 400,
-    height: 390,
-    resizable: false,
+    width: 460,
+    height: 560,
+    resizable: true,
+    minWidth: 420,
+    minHeight: 500,
     frame: false,
-    alwaysOnTop: true,
-    title: 'MemeDrop — Send',
+    alwaysOnTop: false,
+    title: 'MemeDrop',
     webPreferences: {
       preload: path.join(__dirname, 'sender-preload.js'),
       contextIsolation: true,
@@ -103,7 +108,11 @@ function connectSocket() {
 
   if (socketClient) socketClient.disconnect();
 
-  socketClient = io(settings.serverUrl, { reconnectionAttempts: Infinity });
+  socketClient = io(settings.serverUrl, {
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 2000,
+    reconnectionDelayMax: 30000,
+  });
 
   socketClient.on('connect', () => {
     console.log('[socket] connecté au serveur');
@@ -129,7 +138,7 @@ function registerHotkey() {
   try {
     globalShortcut.register('CommandOrControl+Shift+D', () => {
       if (senderWindow && !senderWindow.isDestroyed()) {
-        senderWindow.close();
+        senderWindow.focus();
       } else {
         createSenderWindow();
       }
@@ -238,6 +247,37 @@ ipcMain.handle('get-users', async () => {
 
 ipcMain.on('close-sender', () => {
   if (senderWindow && !senderWindow.isDestroyed()) senderWindow.close();
+});
+
+// ── Favorites ─────────────────────────────────────────────────────────────────
+
+ipcMain.handle('get-favorites', () => store.get('favorites') || []);
+
+ipcMain.handle('save-favorite', (_e, fav) => {
+  const favs = store.get('favorites') || [];
+  favs.push({ ...fav, id: Date.now() });
+  store.set('favorites', favs);
+  return favs;
+});
+
+ipcMain.handle('delete-favorite', (_e, id) => {
+  const favs = (store.get('favorites') || []).filter(f => f.id !== id);
+  store.set('favorites', favs);
+  return favs;
+});
+
+// ── GIF Search (Tenor) ────────────────────────────────────────────────────────
+
+ipcMain.handle('search-gifs', async (_e, query) => {
+  const apiKey = store.get('giphyApiKey') || '';
+  if (!apiKey) return { error: 'no_key' };
+  try {
+    const url = `https://api.giphy.com/v1/gifs/search?q=${encodeURIComponent(query)}&api_key=${apiKey}&limit=12&rating=g`;
+    const res  = await fetch(url);
+    return res.json();
+  } catch (err) {
+    return { error: err.message };
+  }
 });
 
 ipcMain.handle('check-for-updates', () => {

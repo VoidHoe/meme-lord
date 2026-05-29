@@ -92,6 +92,8 @@ async function processQueue() {
 
   container.style.display   = 'none';
   container.style.animation = '';
+  const vid = container.querySelector('video');
+  if (vid) { vid.pause(); vid.src = ''; }
   container.innerHTML       = '';
   await sleep(200);
   processQueue();
@@ -133,21 +135,22 @@ function buildMediaElement(media) {
 
 function playAudio(audio) {
   return new Promise((resolve) => {
+    const done = (a) => { a.src = ''; resolve(); };
     if (audio.type === 'sfx') {
       const name = audio.url.replace('sfx:', '');
       const a = new Audio(`sounds/${name}.mp3`);
       a.volume  = (settings.volumeSfx || 80) / 100;
-      a.onended = resolve;
-      a.onerror = resolve;
-      a.play().catch(() => resolve());
+      a.onended = () => done(a);
+      a.onerror = () => done(a);
+      a.play().catch(() => done(a));
       return;
     }
     if (audio.type === 'voice' && audio.url) {
       const a = new Audio(audio.url);
       a.volume  = (settings.volumeVoice || 100) / 100;
-      a.onended = resolve;
-      a.onerror = resolve;
-      a.play().catch(() => resolve());
+      a.onended = () => done(a);
+      a.onerror = () => done(a);
+      a.play().catch(() => done(a));
       return;
     }
     resolve();
@@ -156,16 +159,17 @@ function playAudio(audio) {
 
 function waitForMedia(el) {
   return new Promise((resolve) => {
-    const done = () => resolve();
+    let settled = false;
+    const done = () => { if (settled) return; settled = true; resolve(); };
     if (el.tagName === 'IMG') {
-      if (el.complete && el.naturalWidth > 0) { done(); return; }
-      el.onload  = done;
-      el.onerror = done;
+      if (el.complete && el.naturalWidth > 0) { resolve(); return; }
+      el.addEventListener('load',  done, { once: true });
+      el.addEventListener('error', done, { once: true });
     } else if (el.tagName === 'VIDEO') {
-      el.oncanplay = done;
-      el.onerror   = done;
+      el.addEventListener('canplay', done, { once: true });
+      el.addEventListener('error',   done, { once: true });
     } else {
-      done(); return;
+      resolve(); return;
     }
     setTimeout(done, 4000);
   });
