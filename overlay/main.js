@@ -29,7 +29,7 @@ let socketClient   = null;
 // ── Fenêtres ──────────────────────────────────────────────────────────────────
 
 function createOverlayWindow() {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  const { width, height } = screen.getPrimaryDisplay().bounds;
 
   overlayWindow = new BrowserWindow({
     width,
@@ -48,10 +48,22 @@ function createOverlayWindow() {
     },
   });
 
-  overlayWindow.setIgnoreMouseEvents(true);
+  overlayWindow.setIgnoreMouseEvents(true, { forward: true });
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  overlayWindow.moveTop();
   overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
   overlayWindow.on('closed', () => { overlayWindow = null; });
+
+  // Re-raise every second — games in borderless windowed mode can temporarily
+  // push the overlay down in z-order when they take focus.
+  // NOTE: exclusive fullscreen games bypass the Windows compositor entirely;
+  // nothing short of native DLL injection (like Discord overlay) can fix that.
+  setInterval(() => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+      overlayWindow.moveTop();
+    }
+  }, 1000);
 }
 
 function createSettingsWindow() {
