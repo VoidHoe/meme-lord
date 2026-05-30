@@ -17,6 +17,8 @@ const store = new Store({
     giphyApiKey: 'AMwifjHTUcKxrxHdjcDSWqs6uLrCXCNk',
     micDeviceId: '',
     favorites: [],
+    anchorPosition: 'center',
+    dropSize: 'm',
   },
 });
 
@@ -179,7 +181,7 @@ ipcMain.on('open-settings', createSettingsWindow);
 
 // ── Sender — drop direct sans Discord ────────────────────────────────────────
 
-ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audioUrl }) => {
+ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audioUrl, loop, loopDuration, size }) => {
   try {
     const serverUrl = store.get('serverUrl') || 'https://memelord-production-3bbf.up.railway.app';
 
@@ -229,10 +231,13 @@ ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audi
 
     const event = {
       media,
-      audio:   audioUrl ? { type: 'voice', url: audioUrl } : null,
-      effects: effects || [],
-      target:  target  || null,
-      caption: caption || null,
+      audio:        audioUrl ? { type: 'voice', url: audioUrl } : null,
+      effects:      effects || [],
+      target:       target  || null,
+      caption:      caption || null,
+      loop:         loop    ?? false,
+      loopDuration: loopDuration || null,
+      size:         size    || 'm',
     };
 
     const res = await fetch(`${serverUrl}/api/drop`, {

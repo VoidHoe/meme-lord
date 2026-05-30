@@ -1,5 +1,5 @@
-const fields      = ['serverUrl', 'discordUsername', 'positionX', 'positionY', 'duration', 'volumeSfx', 'volumeVoice', 'giphyApiKey', 'micDeviceId'];
-const rangeFields = ['positionX', 'positionY', 'duration', 'volumeSfx', 'volumeVoice'];
+const fields      = ['serverUrl', 'discordUsername', 'duration', 'volumeSfx', 'volumeVoice', 'giphyApiKey', 'micDeviceId'];
+const rangeFields = ['duration', 'volumeSfx', 'volumeVoice'];
 
 window.memedrop.getSettings().then(settings => {
   fields.forEach(key => {

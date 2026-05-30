@@ -7,7 +7,20 @@ let audioBlob      = null;
 let recordingTimer = null;
 let recordingSecs  = 0;
 let mediaUrl       = null;
+let mediaIsVideo   = false;
+let loopEnabled    = false;
+let selectedAnchor = 'center';
+let selectedSize   = 'm';
 let pendingSaveFav = null;
+
+// Anchor → overlay positionX/positionY mapping
+const ANCHOR_MAP = {
+  'top-left':     { positionX: 15, positionY: 15 },
+  'top-right':    { positionX: 85, positionY: 15 },
+  'center':       { positionX: 50, positionY: 50 },
+  'bottom-left':  { positionX: 15, positionY: 85 },
+  'bottom-right': { positionX: 85, positionY: 85 },
+};
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const dropZone    = document.getElementById('drop-zone');
@@ -23,6 +36,12 @@ const micBtn      = document.getElementById('mic-btn');
 const voiceLabel  = document.getElementById('voice-label');
 const dropView    = document.getElementById('drop-view');
 const gifView     = document.getElementById('gif-view');
+const loopRow     = document.getElementById('loop-row');
+const loopChk     = document.getElementById('loop-chk');
+const loopLabelText = document.getElementById('loop-label-text');
+const loopSecs    = document.getElementById('loop-secs');
+const loopSecsLabel = document.getElementById('loop-secs-label');
+const loopHint    = document.getElementById('loop-hint');
 
 // ── GIF slide panel ───────────────────────────────────────────────────────────
 document.getElementById('open-gif-btn').addEventListener('click', openGifView);
@@ -40,7 +59,13 @@ function closeGifView() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-window.sender.getSettings().then(s => { micDeviceId = s.micDeviceId || ''; });
+window.sender.getSettings().then(s => {
+  micDeviceId = s.micDeviceId || '';
+  const savedAnchor = s.anchorPosition || 'center';
+  setAnchor(savedAnchor, false);
+  const savedSize = s.dropSize || 'm';
+  setSize(savedSize, false);
+});
 loadUsers();
 
 // ── Users dropdown ────────────────────────────────────────────────────────────
@@ -58,6 +83,78 @@ async function loadUsers() {
   setTimeout(() => refreshBtn.classList.remove('spinning'), 400);
 }
 refreshBtn.addEventListener('click', loadUsers);
+
+// ── Anchor grid ───────────────────────────────────────────────────────────────
+document.querySelectorAll('.anchor-btn').forEach(btn => {
+  btn.addEventListener('click', () => setAnchor(btn.dataset.anchor, true));
+});
+
+function setAnchor(anchor, persist) {
+  selectedAnchor = anchor;
+  document.querySelectorAll('.anchor-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.anchor === anchor);
+  });
+  if (persist) {
+    const pos = ANCHOR_MAP[anchor] || ANCHOR_MAP['center'];
+    window.sender.saveSettings({ anchorPosition: anchor, positionX: pos.positionX, positionY: pos.positionY });
+  }
+}
+
+// ── Size chips ────────────────────────────────────────────────────────────────
+document.querySelectorAll('.size-chip').forEach(btn => {
+  btn.addEventListener('click', () => setSize(btn.dataset.size, true));
+});
+
+function setSize(size, persist) {
+  selectedSize = size;
+  document.querySelectorAll('.size-chip').forEach(b => {
+    b.classList.toggle('active', b.dataset.size === size);
+  });
+  if (persist) {
+    window.sender.saveSettings({ dropSize: size });
+  }
+}
+
+// ── Loop row ─────────────────────────────────────────────────────────────────
+loopChk.addEventListener('click', toggleLoop);
+document.querySelector('.loop-label').addEventListener('click', toggleLoop);
+
+function toggleLoop() {
+  if (loopRow.classList.contains('disabled')) return;
+  loopEnabled = !loopEnabled;
+  loopChk.classList.toggle('checked', loopEnabled);
+  loopChk.textContent = loopEnabled ? '✓' : '';
+  loopRow.classList.toggle('loop-active', loopEnabled);
+  if (loopEnabled) {
+    loopLabelText.textContent = 'Loop for';
+    loopSecs.style.display = 'inline-block';
+    loopSecsLabel.style.display = 'inline';
+    loopHint.style.display = 'none';
+  } else {
+    loopLabelText.textContent = 'Loop';
+    loopSecs.style.display = 'none';
+    loopSecsLabel.style.display = 'none';
+    loopHint.style.display = 'block';
+    loopHint.textContent = 'plays once then disappears';
+  }
+}
+
+function setLoopRowEnabled(enabled) {
+  loopRow.classList.toggle('disabled', !enabled);
+  if (!enabled) {
+    loopEnabled = false;
+    loopChk.classList.remove('checked');
+    loopChk.textContent = '';
+    loopRow.classList.remove('loop-active');
+    loopLabelText.textContent = 'Loop';
+    loopSecs.style.display = 'none';
+    loopSecsLabel.style.display = 'none';
+    loopHint.style.display = 'block';
+    loopHint.textContent = 'load a video first';
+  } else {
+    loopHint.textContent = 'plays once then disappears';
+  }
+}
 
 // ── Drag and drop ─────────────────────────────────────────────────────────────
 let dragCounter = 0;
@@ -78,7 +175,8 @@ async function uploadFile(file) {
     const ab = await file.arrayBuffer();
     const r  = await window.sender.uploadMedia(ab, file.type);
     if (r.error) throw new Error(r.error);
-    setMediaUrl(r.url, file.name);
+    const isVid = file.type.startsWith('video/');
+    setMediaUrl(r.url, file.name, isVid);
     setStatus('✓ Ready', 'ok');
     setTimeout(() => setStatus(''), 1200);
   } catch(err) {
@@ -87,16 +185,20 @@ async function uploadFile(file) {
   }
 }
 
-function setMediaUrl(url, label) {
-  mediaUrl = url; urlPaste.value = '';
+function setMediaUrl(url, label, isVideo = false) {
+  mediaUrl = url; mediaIsVideo = isVideo; urlPaste.value = '';
   dropZone.classList.add('has-url');
   urlText.textContent = label || url;
   clearUrlBtn.style.display = 'block';
+  setLoopRowEnabled(isVideo);
 }
+
 function clearMedia() {
-  mediaUrl = null; dropZone.classList.remove('has-url');
+  mediaUrl = null; mediaIsVideo = false;
+  dropZone.classList.remove('has-url');
   urlText.textContent = 'Drop a file here, or paste a URL below';
   clearUrlBtn.style.display = 'none';
+  setLoopRowEnabled(false);
 }
 clearUrlBtn.addEventListener('click', clearMedia);
 
@@ -106,15 +208,17 @@ function applyPastedUrl() {
   const v = urlPaste.value.trim();
   if (!v.startsWith('http')) return;
   if (/tiktok\.com\/@[\w.]+\/video\/\d+/.test(v)) {
-    setMediaUrl(v, '🎵 TikTok video'); return;
+    setMediaUrl(v, '🎵 TikTok video', true); return;
   }
   if (/(?:twitter\.com|x\.com)\/\w+\/status\/\d+/.test(v)) {
-    setMediaUrl(v, '🐦 Twitter / X post'); return;
+    setMediaUrl(v, '🐦 Twitter / X post', true); return;
   }
   if (/(?:youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/.test(v)) {
-    setMediaUrl(v, '▶️ YouTube video'); return;
+    setMediaUrl(v, '▶️ YouTube video', true); return;
   }
-  setMediaUrl(v, v);
+  const ext = v.split('.').pop().split('?')[0].toLowerCase();
+  const isVid = ['mp4', 'webm'].includes(ext);
+  setMediaUrl(v, v, isVid);
 }
 
 // ── Effects ───────────────────────────────────────────────────────────────────
@@ -169,10 +273,11 @@ sendBtn.addEventListener('click', send);
 
 async function send() {
   applyPastedUrl();
-  const url     = mediaUrl || null;
-  const target  = targetSel.value || null;
-  const caption = capInput.value.trim() || null;
-  const effects = [...activeEffects];
+  const url          = mediaUrl || null;
+  const target       = targetSel.value || null;
+  const caption      = capInput.value.trim() || null;
+  const effects      = [...activeEffects];
+  const loopDuration = loopEnabled ? (parseInt(loopSecs.value) || 10) : null;
 
   if (!url && !audioBlob) { setStatus('Add a URL, drop a file, or record audio', 'err'); return; }
 
@@ -186,7 +291,12 @@ async function send() {
       audioUrl = r.url;
     }
     setStatus('Sending…');
-    const result = await window.sender.sendDrop({ url, target, caption, effects, audioUrl });
+    const result = await window.sender.sendDrop({
+      url, target, caption, effects, audioUrl,
+      loop: loopEnabled,
+      loopDuration,
+      size: selectedSize,
+    });
     if (result.ok) {
       setStatus('✓ Dropped!', 'ok');
       resetForm();
@@ -243,7 +353,7 @@ async function searchGifs(query) {
     img.loading = 'lazy';
     div.appendChild(img);
     div.addEventListener('click', () => {
-      setMediaUrl(mp4Url || preview, item.title || 'GIF');
+      setMediaUrl(mp4Url || preview, item.title || 'GIF', !!mp4Url);
       closeGifView();
       setStatus('✓ GIF selected', 'ok');
       setTimeout(() => setStatus(''), 1200);
@@ -253,7 +363,6 @@ async function searchGifs(query) {
 }
 
 // ── Save favorite ─────────────────────────────────────────────────────────────
-// (save-only — no list view)
 document.getElementById('fav-save-ok').addEventListener('click', async () => {
   const name = document.getElementById('fav-name-input').value.trim();
   if (!name || !pendingSaveFav) return;

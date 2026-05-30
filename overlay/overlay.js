@@ -5,6 +5,8 @@ let queue     = [];
 let isPlaying = false;
 let settings  = { positionX: 50, positionY: 50, duration: 5000, volumeSfx: 80, volumeVoice: 100 };
 
+const SIZE_MAP = { s: 180, m: 280, l: 400, xl: 540 };
+
 window.memedrop.getSettings().then(s => { settings = s; applyPosition(); });
 window.memedrop.onSettingsChanged(s => { settings = s; applyPosition(); });
 
@@ -44,16 +46,18 @@ async function processQueue() {
   container.style.opacity  = '1';
   container.style.animation = '';
   container.style.display  = 'flex';
+  container.style.maxWidth = (SIZE_MAP[event.size] || 280) + 'px';
 
   const hasFade = (event.effects || []).includes('fade');
   const hasSpin = (event.effects || []).includes('spin');
 
+  let mediaEl = null;
   if (event.media) {
-    const el = buildMediaElement(event.media);
-    if (el) {
-      if (hasSpin) el.classList.add('fx-spin');
-      container.appendChild(el);
-      await waitForMedia(el);
+    mediaEl = buildMediaElement(event.media, event.loop);
+    if (mediaEl) {
+      if (hasSpin) mediaEl.classList.add('fx-spin');
+      container.appendChild(mediaEl);
+      await waitForMedia(mediaEl);
     }
   }
 
@@ -66,25 +70,37 @@ async function processQueue() {
 
   applyPosition();
 
-  // ── Fade in ───────────────────────────────────────────────────
+  // Fade in
   if (hasFade) {
     container.style.animation = 'fadeIn 3s ease forwards';
   }
 
-  // ── Wait for display duration (+ audio if any) ────────────────
-  const duration = settings.duration || 5000;
+  // Determine display duration
+  const isVideo        = mediaEl && mediaEl.tagName === 'VIDEO';
+  const playOnce       = isVideo && event.loop === false;
+  const loopDurationMs = isVideo && event.loop === true
+    ? (event.loopDuration || 10) * 1000
+    : (settings.duration || 5000);
 
-  if (event.audio) {
-    const audioEnd = playAudio(event.audio);
-    await Promise.race([
-      Promise.all([audioEnd, sleep(duration)]),
-      sleep(10000),
-    ]);
+  if (playOnce) {
+    await new Promise(res => {
+      mediaEl.addEventListener('ended', res, { once: true });
+      setTimeout(res, 60000);
+    });
+    if (event.audio) playAudio(event.audio);
   } else {
-    await sleep(duration);
+    const displayMs = isVideo ? loopDurationMs : (settings.duration || 5000);
+    if (event.audio) {
+      await Promise.race([
+        Promise.all([playAudio(event.audio), sleep(displayMs)]),
+        sleep(10000),
+      ]);
+    } else {
+      await sleep(displayMs);
+    }
   }
 
-  // ── Fade out ──────────────────────────────────────────────────
+  // Fade out
   if (hasFade) {
     container.style.animation = 'fadeOut 3s ease forwards';
     await sleep(3000);
@@ -99,7 +115,7 @@ async function processQueue() {
   processQueue();
 }
 
-function buildMediaElement(media) {
+function buildMediaElement(media, loop) {
   switch (media.type) {
     case 'image':
     case 'gif': {
@@ -111,7 +127,7 @@ function buildMediaElement(media) {
       const video = document.createElement('video');
       video.src       = media.url;
       video.autoplay  = true;
-      video.loop      = true;
+      video.loop      = loop !== false;
       video.muted     = false;
       video.volume    = (settings.volumeSfx || 80) / 100;
       video.playsInline = true;
