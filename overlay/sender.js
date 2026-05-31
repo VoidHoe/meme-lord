@@ -291,11 +291,14 @@ async function send() {
       audioUrl = r.url;
     }
     setStatus('Sending…');
+    const pos = ANCHOR_MAP[selectedAnchor] || ANCHOR_MAP['center'];
     const result = await window.sender.sendDrop({
       url, target, caption, effects, audioUrl,
       loop: loopEnabled,
       loopDuration,
       size: selectedSize,
+      positionX: pos.positionX,
+      positionY: pos.positionY,
     });
     if (result.ok) {
       setStatus('✓ Dropped!', 'ok');

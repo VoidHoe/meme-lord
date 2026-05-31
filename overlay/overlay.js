@@ -16,11 +16,13 @@ window.memedrop.onDrop(event => {
   if (!isPlaying) processQueue();
 });
 
-function applyPosition() {
+function applyPosition(overrideX, overrideY) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const x = Math.round((settings.positionX / 100) * vw - (container.offsetWidth  || 240) / 2);
-  const y = Math.round((settings.positionY / 100) * vh - (container.offsetHeight || 180) / 2);
+  const px = overrideX != null ? overrideX : settings.positionX;
+  const py = overrideY != null ? overrideY : settings.positionY;
+  const x = Math.round((px / 100) * vw - (container.offsetWidth  || 240) / 2);
+  const y = Math.round((py / 100) * vh - (container.offsetHeight || 180) / 2);
   container.style.left = `${Math.max(0, x)}px`;
   container.style.top  = `${Math.max(0, y)}px`;
 }
@@ -68,7 +70,7 @@ async function processQueue() {
     container.appendChild(cap);
   }
 
-  applyPosition();
+  applyPosition(event.positionX, event.positionY);
 
   // Fade in
   if (hasFade) {
