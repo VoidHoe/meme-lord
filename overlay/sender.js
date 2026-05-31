@@ -42,6 +42,9 @@ const loopLabelText = document.getElementById('loop-label-text');
 const loopSecs    = document.getElementById('loop-secs');
 const loopSecsLabel = document.getElementById('loop-secs-label');
 const loopHint    = document.getElementById('loop-hint');
+const historyView  = document.getElementById('history-view');
+const historyList  = document.getElementById('history-list');
+const historyEmpty = document.getElementById('history-empty');
 
 // ── GIF slide panel ───────────────────────────────────────────────────────────
 document.getElementById('open-gif-btn').addEventListener('click', openGifView);
@@ -57,6 +60,111 @@ function closeGifView() {
   dropView.classList.remove('slide-out');
   gifView.classList.remove('slide-in');
 }
+
+// ── History slide panel ───────────────────────────────────────────────────────
+document.getElementById('open-history-btn').addEventListener('click', openHistoryView);
+document.getElementById('history-back-btn').addEventListener('click', closeHistoryView);
+
+function openHistoryView() {
+  dropView.classList.add('slide-out');
+  historyView.classList.add('slide-in');
+  loadHistory();
+}
+
+function closeHistoryView() {
+  dropView.classList.remove('slide-out');
+  historyView.classList.remove('slide-in');
+}
+
+async function loadHistory() {
+  historyList.innerHTML = '';
+  const entries = await window.sender.getHistory();
+  if (!entries.length) {
+    historyEmpty.style.display = 'block';
+    return;
+  }
+  historyEmpty.style.display = 'none';
+  entries.forEach(entry => historyList.appendChild(renderHistoryEntry(entry)));
+}
+
+function renderHistoryEntry(entry) {
+  const el = document.createElement('div');
+  el.className = 'history-entry';
+
+  const thumb = document.createElement('div');
+  thumb.className = 'history-thumb';
+  const m = entry.media;
+  if (m?.type === 'image' || m?.type === 'gif') {
+    const img = document.createElement('img');
+    img.src = m.url;
+    img.onerror = () => { thumb.textContent = '🖼️'; };
+    thumb.appendChild(img);
+  } else if (m?.type === 'video')   { thumb.textContent = '🎬'; }
+  else if (m?.type === 'youtube')   { thumb.textContent = '▶️'; }
+  else if (m?.type === 'tiktok')    { thumb.textContent = '🎵'; }
+  else if (m?.type === 'twitter')   { thumb.textContent = '🐦'; }
+  else if (m?.type === 'emoji')     { thumb.textContent = m.url; }
+  else                              { thumb.textContent = '🎤'; }
+
+  const info = document.createElement('div');
+  info.className = 'history-info';
+  const cap = document.createElement('div');
+  cap.className = entry.caption ? 'history-caption' : 'history-caption no-caption';
+  cap.textContent = entry.caption || (m ? m.type : 'audio only');
+  const time = document.createElement('div');
+  time.className = 'history-time';
+  time.textContent = relativeTime(entry.timestamp);
+  info.appendChild(cap);
+  info.appendChild(time);
+
+  const btn = document.createElement('button');
+  btn.className = 'history-resend';
+  btn.textContent = '↩ Re-send';
+  btn.addEventListener('click', () => resendHistoryEntry(entry, btn));
+
+  el.appendChild(thumb);
+  el.appendChild(info);
+  el.appendChild(btn);
+  return el;
+}
+
+function relativeTime(ts) {
+  const diff = Date.now() - ts;
+  if (diff < 60000)    return 'just now';
+  if (diff < 3600000)  return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
+}
+
+async function resendHistoryEntry(entry, btn) {
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const result = await window.sender.sendDrop({
+      url:          entry.media?.url || null,
+      target:       null,
+      caption:      entry.caption,
+      effects:      entry.effects      || [],
+      audioUrl:     null,
+      loop:         entry.loop         || false,
+      loopDuration: entry.loopDuration || null,
+      size:         entry.size         || 'm',
+      positionX:    entry.positionX    ?? null,
+      positionY:    entry.positionY    ?? null,
+    });
+    btn.textContent = result.ok ? '✓' : '✗';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '↩ Re-send'; }, 1500);
+  } catch {
+    btn.disabled = false;
+    btn.textContent = '↩ Re-send';
+  }
+}
+
+document.getElementById('history-clear-btn').addEventListener('click', async () => {
+  await window.sender.clearHistory();
+  historyList.innerHTML = '';
+  historyEmpty.style.display = 'block';
+});
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.sender.getSettings().then(s => {
@@ -235,6 +343,7 @@ document.getElementById('close-btn').addEventListener('click', () => window.send
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (gifView.classList.contains('slide-in')) closeGifView();
+    else if (historyView.classList.contains('slide-in')) closeHistoryView();
     else window.sender.close();
   }
 });

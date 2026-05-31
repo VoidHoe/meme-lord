@@ -19,6 +19,7 @@ const store = new Store({
     favorites: [],
     anchorPosition: 'center',
     dropSize: 'm',
+    history: [],
   },
 });
 
@@ -321,6 +322,21 @@ ipcMain.handle('delete-favorite', (_e, id) => {
   const favs = (store.get('favorites') || []).filter(f => f.id !== id);
   store.set('favorites', favs);
   return favs;
+});
+
+// ── History ───────────────────────────────────────────────────────────────────
+
+ipcMain.on('save-history', (_event, entry) => {
+  const history = store.get('history') || [];
+  history.unshift(entry);
+  store.set('history', history.slice(0, 50));
+});
+
+ipcMain.handle('get-history', () => store.get('history') || []);
+
+ipcMain.handle('clear-history', () => {
+  store.set('history', []);
+  return [];
 });
 
 // ── GIF Search (Tenor) ────────────────────────────────────────────────────────
