@@ -22,11 +22,12 @@ const store = new Store({
   },
 });
 
-let overlayWindow  = null;
-let settingsWindow = null;
-let senderWindow   = null;
-let tray           = null;
-let socketClient   = null;
+let overlayWindow    = null;
+let settingsWindow   = null;
+let senderWindow     = null;
+let tray             = null;
+let socketClient     = null;
+let overlayRaiseTimer = null;
 
 // ── Fenêtres ──────────────────────────────────────────────────────────────────
 
@@ -54,13 +55,17 @@ function createOverlayWindow() {
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   overlayWindow.moveTop();
   overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
-  overlayWindow.on('closed', () => { overlayWindow = null; });
+  overlayWindow.on('closed', () => {
+    overlayWindow = null;
+    if (overlayRaiseTimer) { clearInterval(overlayRaiseTimer); overlayRaiseTimer = null; }
+  });
 
   // Re-raise every second — games in borderless windowed mode can temporarily
   // push the overlay down in z-order when they take focus.
   // NOTE: exclusive fullscreen games bypass the Windows compositor entirely;
   // nothing short of native DLL injection (like Discord overlay) can fix that.
-  setInterval(() => {
+  if (overlayRaiseTimer) clearInterval(overlayRaiseTimer);
+  overlayRaiseTimer = setInterval(() => {
     if (overlayWindow && !overlayWindow.isDestroyed()) {
       overlayWindow.setAlwaysOnTop(true, 'screen-saver');
       overlayWindow.moveTop();

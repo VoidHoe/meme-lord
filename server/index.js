@@ -15,6 +15,20 @@ const io = new Server(server, { cors: { origin: '*' } });
 app.use('/audio', express.static(path.join(__dirname, 'audio_cache')));
 app.use('/media', express.static(path.join(__dirname, 'media_cache')));
 
+// Purge cache files older than 1 hour on startup (survives server crashes)
+function purgeStaleCache(dir) {
+  if (!fs.existsSync(dir)) return;
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  fs.readdirSync(dir).forEach(f => {
+    try {
+      const fp = path.join(dir, f);
+      if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp);
+    } catch {}
+  });
+}
+purgeStaleCache(path.join(__dirname, 'audio_cache'));
+purgeStaleCache(path.join(__dirname, 'media_cache'));
+
 const router = createRouter(io);
 
 io.on('connection', (socket) => {
@@ -57,7 +71,9 @@ app.post('/api/upload-media', express.raw({ type: '*/*', limit: '50mb' }), (req,
     const filename  = `media-${Date.now()}.${ext}`;
     const mediaDir  = path.join(__dirname, 'media_cache');
     fs.mkdirSync(mediaDir, { recursive: true });
-    fs.writeFileSync(path.join(mediaDir, filename), req.body);
+    const filepath = path.join(mediaDir, filename);
+    fs.writeFileSync(filepath, req.body);
+    setTimeout(() => { try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch {} }, 5 * 60 * 1000);
     const publicUrl = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`;
     console.log(`[api] media uploadé: ${filename}`);
     res.json({ url: `${publicUrl}/media/${filename}` });
@@ -93,7 +109,9 @@ app.post('/api/upload-audio', express.raw({ type: 'audio/*', limit: '10mb' }), (
     const filename = `drop-${Date.now()}.${ext}`;
     const audioDir = path.join(__dirname, 'audio_cache');
     fs.mkdirSync(audioDir, { recursive: true });
-    fs.writeFileSync(path.join(audioDir, filename), req.body);
+    const filepath = path.join(audioDir, filename);
+    fs.writeFileSync(filepath, req.body);
+    setTimeout(() => { try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch {} }, 5 * 60 * 1000);
     const publicUrl = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`;
     console.log(`[api] audio uploadé: ${filename}`);
     res.json({ url: `${publicUrl}/audio/${filename}` });
