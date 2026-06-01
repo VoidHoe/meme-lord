@@ -6,7 +6,6 @@ contextBridge.exposeInMainWorld('memedrop', {
   saveSettings:     (settings)   => ipcRenderer.invoke('save-settings', settings),
   openSettings:     ()           => ipcRenderer.send('open-settings'),
   checkForUpdates:  ()           => ipcRenderer.invoke('check-for-updates'),
-  saveHistory:      (entry)      => ipcRenderer.send('save-history', entry),
 
   // Main → Renderer (drops)
   onDrop:           (cb) => ipcRenderer.on('drop',             (_e, data)     => cb(data)),

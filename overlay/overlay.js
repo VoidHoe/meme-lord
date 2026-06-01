@@ -43,19 +43,6 @@ async function processQueue() {
   const event = queue.shift();
   updateBadge();
 
-  window.memedrop.saveHistory({
-    id:           Date.now(),
-    timestamp:    Date.now(),
-    media:        event.media        || null,
-    caption:      event.caption      || null,
-    size:         event.size         || 'm',
-    positionX:    event.positionX    ?? null,
-    positionY:    event.positionY    ?? null,
-    effects:      event.effects      || [],
-    loop:         event.loop         || false,
-    loopDuration: event.loopDuration || null,
-  });
-
   // Reset container
   container.innerHTML      = '';
   container.style.opacity  = '1';

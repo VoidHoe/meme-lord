@@ -411,6 +411,27 @@ async function send() {
     });
     if (result.ok) {
       setStatus('✓ Dropped!', 'ok');
+      let mediaType = null;
+      if (url) {
+        if (/tiktok\.com/.test(url))              mediaType = 'tiktok';
+        else if (/(?:twitter|x)\.com/.test(url))  mediaType = 'twitter';
+        else if (/(?:youtube\.com|youtu\.be)/.test(url)) mediaType = 'youtube';
+        else if (mediaIsVideo)                    mediaType = 'video';
+        else                                      mediaType = 'image';
+      }
+      window.sender.saveHistory({
+        id:           Date.now(),
+        timestamp:    Date.now(),
+        media:        url ? { type: mediaType, url } : null,
+        caption,
+        size:         selectedSize,
+        positionX:    pos.positionX,
+        positionY:    pos.positionY,
+        effects,
+        loop:         loopEnabled,
+        loopDuration: loopEnabled ? (parseInt(loopSecs.value) || 10) : null,
+        target:       target || null,
+      });
       resetForm();
     } else {
       setStatus(result.error || 'Server error', 'err');
