@@ -187,7 +187,7 @@ ipcMain.on('open-settings', createSettingsWindow);
 
 // ── Sender — drop direct sans Discord ────────────────────────────────────────
 
-ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audioUrl, loop, loopDuration, size, positionX, positionY }) => {
+ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audioUrl, loop, loopDuration, loopTimes, size, positionX, positionY }) => {
   try {
     const serverUrl = store.get('serverUrl') || 'https://memelord-production-3bbf.up.railway.app';
 
@@ -243,6 +243,7 @@ ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audi
       caption:      caption || null,
       loop:         loop    ?? false,
       loopDuration: loopDuration || null,
+      loopTimes:    loopTimes || null,
       size:         size    || 'm',
       positionX:    positionX ?? null,
       positionY:    positionY ?? null,

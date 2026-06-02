@@ -41,6 +41,8 @@ const loopChk     = document.getElementById('loop-chk');
 const loopLabelText = document.getElementById('loop-label-text');
 const loopSecs    = document.getElementById('loop-secs');
 const loopSecsLabel = document.getElementById('loop-secs-label');
+const loopTimes   = document.getElementById('loop-times');
+const loopTimesLabel = document.getElementById('loop-times-label');
 const loopHint    = document.getElementById('loop-hint');
 const historyView  = document.getElementById('history-view');
 const historyList  = document.getElementById('history-list');
@@ -148,6 +150,7 @@ async function resendHistoryEntry(entry, btn) {
       audioUrl:     null,
       loop:         entry.loop         || false,
       loopDuration: entry.loopDuration || null,
+      loopTimes:    entry.loopTimes    || null,
       size:         entry.size         || 'm',
       positionX:    entry.positionX    ?? null,
       positionY:    entry.positionY    ?? null,
@@ -234,16 +237,20 @@ function toggleLoop() {
   loopChk.textContent = loopEnabled ? '✓' : '';
   loopRow.classList.toggle('loop-active', loopEnabled);
   if (loopEnabled) {
-    loopLabelText.textContent = 'Loop for';
+    loopLabelText.textContent = 'First';
     loopSecs.style.display = 'inline-block';
     loopSecsLabel.style.display = 'inline';
+    loopTimes.style.display = 'inline-block';
+    loopTimesLabel.style.display = 'inline';
     loopHint.style.display = 'none';
   } else {
     loopLabelText.textContent = 'Loop';
     loopSecs.style.display = 'none';
     loopSecsLabel.style.display = 'none';
+    loopTimes.style.display = 'none';
+    loopTimesLabel.style.display = 'none';
     loopHint.style.display = 'block';
-    loopHint.textContent = 'plays once then disappears';
+    loopHint.textContent = 'plays the whole video once';
   }
 }
 
@@ -257,10 +264,12 @@ function setLoopRowEnabled(enabled) {
     loopLabelText.textContent = 'Loop';
     loopSecs.style.display = 'none';
     loopSecsLabel.style.display = 'none';
+    loopTimes.style.display = 'none';
+    loopTimesLabel.style.display = 'none';
     loopHint.style.display = 'block';
     loopHint.textContent = 'load a video first';
   } else {
-    loopHint.textContent = 'plays once then disappears';
+    loopHint.textContent = 'plays the whole video once';
   }
 }
 
@@ -387,6 +396,7 @@ async function send() {
   const caption      = capInput.value.trim() || null;
   const effects      = [...activeEffects];
   const loopDuration = loopEnabled ? (parseInt(loopSecs.value) || 10) : null;
+  const loopTimesVal = loopEnabled ? (parseInt(loopTimes.value) || 1) : null;
 
   if (!url && !audioBlob) { setStatus('Add a URL, drop a file, or record audio', 'err'); return; }
 
@@ -405,6 +415,7 @@ async function send() {
       url, target, caption, effects, audioUrl,
       loop: loopEnabled,
       loopDuration,
+      loopTimes: loopTimesVal,
       size: selectedSize,
       positionX: pos.positionX,
       positionY: pos.positionY,
@@ -430,6 +441,7 @@ async function send() {
         effects,
         loop:         loopEnabled,
         loopDuration: loopEnabled ? (parseInt(loopSecs.value) || 10) : null,
+        loopTimes:    loopTimesVal,
         target:       target || null,
       });
       resetForm();

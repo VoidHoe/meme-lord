@@ -77,29 +77,38 @@ async function processQueue() {
     container.style.animation = 'fadeIn 3s ease forwards';
   }
 
-  // Determine display duration
-  const isVideo        = mediaEl && mediaEl.tagName === 'VIDEO';
-  const playOnce       = isVideo && event.loop === false;
-  const loopDurationMs = isVideo && event.loop === true
-    ? (event.loopDuration || 10) * 1000
-    : (settings.duration || 5000);
+  // Determine playback behavior
+  const isVideo       = mediaEl && mediaEl.tagName === 'VIDEO';
+  const isEmbed       = mediaEl && mediaEl.tagName === 'IFRAME';
+  const VIDEO_CAP_MS  = 120000;  // play full video, but never hog the overlay past 2 min
+  const EMBED_FULL_MS = 120000;  // embeds can't report their end — give them a long window
 
-  if (playOnce) {
+  if (event.loop === true) {
+    // Loop the first N seconds a set number of times
+    const segSecs = event.loopDuration || 10;
+    const times   = Math.max(1, event.loopTimes || 1);
+    if (event.audio) playAudio(event.audio);
+    if (isVideo) {
+      await playVideoSegment(mediaEl, segSecs, times);
+    } else {
+      // images / embeds can't be trimmed — just hold for the total time
+      await sleep(segSecs * times * 1000);
+    }
+  } else if (isVideo) {
+    // Play the whole video once
     await new Promise(res => {
       mediaEl.addEventListener('ended', res, { once: true });
-      setTimeout(res, 60000);
+      setTimeout(res, VIDEO_CAP_MS);
     });
     if (event.audio) playAudio(event.audio);
+  } else if (isEmbed) {
+    // Play the whole embedded clip (best-effort fixed window)
+    if (event.audio) playAudio(event.audio);
+    await sleep(EMBED_FULL_MS);
   } else {
-    const displayMs = isVideo ? loopDurationMs : (settings.duration || 5000);
-    if (event.audio) {
-      await Promise.race([
-        Promise.all([playAudio(event.audio), sleep(displayMs)]),
-        sleep(10000),
-      ]);
-    } else {
-      await sleep(displayMs);
-    }
+    // image / gif / emoji
+    if (event.audio) playAudio(event.audio);
+    await sleep(settings.duration || 5000);
   }
 
   // Fade out
@@ -129,7 +138,7 @@ function buildMediaElement(media, loop) {
       const video = document.createElement('video');
       video.src       = media.url;
       video.autoplay  = true;
-      video.loop      = loop !== false;
+      video.loop      = false;  // looping is controlled manually in playVideoSegment
       video.muted     = false;
       video.volume    = (settings.volumeSfx || 80) / 100;
       video.playsInline = true;
@@ -164,6 +173,34 @@ function buildMediaElement(media, loop) {
     }
     default: return null;
   }
+}
+
+// Play the first `segSecs` seconds of a video, repeated `times` times.
+function playVideoSegment(video, segSecs, times) {
+  return new Promise((resolve) => {
+    let plays = 0;
+    let done  = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      video.removeEventListener('timeupdate', onTime);
+      video.removeEventListener('ended', onEnded);
+      resolve();
+    };
+    const next = () => {
+      plays++;
+      if (plays >= times) { finish(); return; }
+      try { video.currentTime = 0; video.play().catch(() => {}); } catch {}
+    };
+    const onTime  = () => { if (video.currentTime >= segSecs) next(); };
+    const onEnded = () => next();  // video shorter than the segment
+    video.loop = false;
+    try { video.currentTime = 0; } catch {}
+    video.play().catch(() => {});
+    video.addEventListener('timeupdate', onTime);
+    video.addEventListener('ended', onEnded);
+    setTimeout(finish, segSecs * times * 1000 + 5000);  // safety ceiling
+  });
 }
 
 function playAudio(audio) {
