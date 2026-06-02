@@ -5,7 +5,14 @@ let queue     = [];
 let isPlaying = false;
 let settings  = { positionX: 50, positionY: 50, duration: 5000, volumeSfx: 80, volumeVoice: 100 };
 
-const SIZE_MAP = { s: 180, m: 280, l: 400, xl: 540 };
+// Width + height caps per size. Bigger sizes use viewport units so they
+// scale with the screen — XL takes a big portion of the display.
+const SIZE_MAP = {
+  s:  { w: '220px', h: '200px' },
+  m:  { w: '340px', h: '300px' },
+  l:  { w: '560px', h: '460px' },
+  xl: { w: '82vw',  h: '82vh'  },
+};
 
 window.memedrop.getSettings().then(s => { settings = s; applyPosition(); });
 window.memedrop.onSettingsChanged(s => { settings = s; applyPosition(); });
@@ -16,15 +23,29 @@ window.memedrop.onDrop(event => {
   if (!isPlaying) processQueue();
 });
 
+// Scale images/videos by the chosen size. Embeds (iframes) keep their fixed
+// dimensions so small sizes don't distort TikTok/YouTube/Twitter players.
+function applySize(mediaEl, size) {
+  const sz = SIZE_MAP[size] || SIZE_MAP.m;
+  if (mediaEl.tagName === 'IMG' || mediaEl.tagName === 'VIDEO') {
+    container.style.maxWidth = sz.w;
+    mediaEl.style.maxWidth   = '100%';
+    mediaEl.style.maxHeight  = sz.h;
+  }
+}
+
 function applyPosition(overrideX, overrideY) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const px = overrideX != null ? overrideX : settings.positionX;
   const py = overrideY != null ? overrideY : settings.positionY;
-  const x = Math.round((px / 100) * vw - (container.offsetWidth  || 240) / 2);
-  const y = Math.round((py / 100) * vh - (container.offsetHeight || 180) / 2);
-  container.style.left = `${Math.max(0, x)}px`;
-  container.style.top  = `${Math.max(0, y)}px`;
+  const cw = container.offsetWidth  || 240;
+  const ch = container.offsetHeight || 180;
+  const x = Math.round((px / 100) * vw - cw / 2);
+  const y = Math.round((py / 100) * vh - ch / 2);
+  // Keep the drop fully on screen even when it's large (XL near an edge).
+  container.style.left = `${Math.min(Math.max(0, x), Math.max(0, vw - cw))}px`;
+  container.style.top  = `${Math.min(Math.max(0, y), Math.max(0, vh - ch))}px`;
 }
 
 function updateBadge() {
@@ -48,7 +69,8 @@ async function processQueue() {
   container.style.opacity  = '1';
   container.style.animation = '';
   container.style.display  = 'flex';
-  container.style.maxWidth = (SIZE_MAP[event.size] || 280) + 'px';
+  container.style.maxWidth  = '';
+  container.style.maxHeight = '';
 
   const hasFade = (event.effects || []).includes('fade');
   const hasSpin = (event.effects || []).includes('spin');
@@ -58,6 +80,7 @@ async function processQueue() {
     mediaEl = buildMediaElement(event.media, event.loop);
     if (mediaEl) {
       if (hasSpin) mediaEl.classList.add('fx-spin');
+      applySize(mediaEl, event.size);
       container.appendChild(mediaEl);
       await waitForMedia(mediaEl);
     }
