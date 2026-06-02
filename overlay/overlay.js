@@ -106,15 +106,20 @@ async function processQueue() {
   const VIDEO_CAP_MS  = 120000;  // play full video, but never hog the overlay past 2 min
   const EMBED_FULL_MS = 120000;  // embeds can't report their end — give them a long window
 
-  if (event.loop === true) {
-    // Loop the first N seconds a set number of times
+  const times   = Math.max(1, event.loopTimes || 1);
+  const hasTrim = isVideo && event.trimEnd != null && event.trimEnd > (event.trimStart || 0);
+
+  if (hasTrim) {
+    // Play the trimmed segment [trimStart, trimEnd], repeated `times`
+    if (event.audio) playAudio(event.audio);
+    await playVideoSegment(mediaEl, event.trimStart || 0, event.trimEnd, times);
+  } else if (event.loop === true) {
+    // Legacy loop: first loopDuration seconds, repeated (kept for old history entries)
     const segSecs = event.loopDuration || 10;
-    const times   = Math.max(1, event.loopTimes || 1);
     if (event.audio) playAudio(event.audio);
     if (isVideo) {
-      await playVideoSegment(mediaEl, segSecs, times);
+      await playVideoSegment(mediaEl, 0, segSecs, times);
     } else {
-      // images / embeds can't be trimmed — just hold for the total time
       await sleep(segSecs * times * 1000);
     }
   } else if (isVideo) {
@@ -198,8 +203,8 @@ function buildMediaElement(media, loop) {
   }
 }
 
-// Play the first `segSecs` seconds of a video, repeated `times` times.
-function playVideoSegment(video, segSecs, times) {
+// Play the segment [start, end] (seconds) of a video, repeated `times` times.
+function playVideoSegment(video, start, end, times) {
   return new Promise((resolve) => {
     let plays = 0;
     let done  = false;
@@ -210,19 +215,25 @@ function playVideoSegment(video, segSecs, times) {
       video.removeEventListener('ended', onEnded);
       resolve();
     };
+    // Seek to `start` and play — wait for metadata if the video isn't ready yet.
+    const restart = () => {
+      const go = () => { try { video.currentTime = start; } catch {} video.play().catch(() => {}); };
+      if (video.readyState >= 1) go();
+      else video.addEventListener('loadedmetadata', go, { once: true });
+    };
     const next = () => {
       plays++;
       if (plays >= times) { finish(); return; }
-      try { video.currentTime = 0; video.play().catch(() => {}); } catch {}
+      restart();
     };
-    const onTime  = () => { if (video.currentTime >= segSecs) next(); };
+    const onTime  = () => { if (video.currentTime >= end) next(); };
     const onEnded = () => next();  // video shorter than the segment
     video.loop = false;
-    try { video.currentTime = 0; } catch {}
-    video.play().catch(() => {});
     video.addEventListener('timeupdate', onTime);
     video.addEventListener('ended', onEnded);
-    setTimeout(finish, segSecs * times * 1000 + 5000);  // safety ceiling
+    restart();
+    const span = Math.max(1, end - start);
+    setTimeout(finish, span * times * 1000 + 5000);  // safety ceiling
   });
 }
 

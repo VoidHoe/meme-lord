@@ -8,7 +8,13 @@ let recordingTimer = null;
 let recordingSecs  = 0;
 let mediaUrl       = null;
 let mediaIsVideo   = false;
-let loopEnabled    = false;
+let trimScrubbable = false;   // true only for real playable videos (not embeds)
+let videoDuration  = 0;
+let trimStart      = 0;
+let trimEnd        = 0;
+let trimRepeat     = 1;
+let trimDragging   = null;    // 'start' | 'end' | null
+let previewStop    = null;
 let selectedAnchor = 'center';
 let selectedSize   = 'm';
 let pendingSaveFav = null;
@@ -45,14 +51,18 @@ const micBtn      = document.getElementById('mic-btn');
 const voiceLabel  = document.getElementById('voice-label');
 const dropView    = document.getElementById('drop-view');
 const gifView     = document.getElementById('gif-view');
-const loopRow     = document.getElementById('loop-row');
-const loopChk     = document.getElementById('loop-chk');
-const loopLabelText = document.getElementById('loop-label-text');
-const loopSecs    = document.getElementById('loop-secs');
-const loopSecsLabel = document.getElementById('loop-secs-label');
-const loopTimes   = document.getElementById('loop-times');
-const loopTimesLabel = document.getElementById('loop-times-label');
-const loopHint    = document.getElementById('loop-hint');
+const trimRow      = document.getElementById('trim-row');
+const trimEmpty    = document.getElementById('trim-empty');
+const trimEditor   = document.getElementById('trim-editor');
+const trimVideo    = document.getElementById('trim-video');
+const trimTrack    = document.getElementById('trim-track');
+const trimRange    = document.getElementById('trim-range');
+const trimHStart   = document.getElementById('trim-h-start');
+const trimHEnd     = document.getElementById('trim-h-end');
+const trimPlayhead = document.getElementById('trim-playhead');
+const trimReadout  = document.getElementById('trim-readout');
+const trimRepVal   = document.getElementById('trim-rep-val');
+const trimPreviewBtn = document.getElementById('trim-preview-btn');
 const historyView  = document.getElementById('history-view');
 const historyList  = document.getElementById('history-list');
 const historyEmpty = document.getElementById('history-empty');
@@ -169,6 +179,8 @@ async function resendHistoryEntry(entry, btn) {
       loop:         entry.loop         || false,
       loopDuration: entry.loopDuration || null,
       loopTimes:    entry.loopTimes    || null,
+      trimStart:    entry.trimStart    ?? null,
+      trimEnd:      entry.trimEnd      ?? null,
       size:         drop.size,
       positionX:    drop.positionX,
       positionY:    drop.positionY,
@@ -245,52 +257,125 @@ function setSize(size, persist) {
   }
 }
 
-// ── Loop row ─────────────────────────────────────────────────────────────────
-loopChk.addEventListener('click', toggleLoop);
-document.querySelector('.loop-label').addEventListener('click', toggleLoop);
+// ── Trim timeline ───────────────────────────────────────────────────────────
+function fmtClock(s) {
+  if (!isFinite(s) || s < 0) s = 0;
+  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
 
-function toggleLoop() {
-  if (loopRow.classList.contains('disabled')) return;
-  loopEnabled = !loopEnabled;
-  loopChk.classList.toggle('checked', loopEnabled);
-  loopChk.textContent = loopEnabled ? '✓' : '';
-  loopRow.classList.toggle('loop-active', loopEnabled);
-  if (loopEnabled) {
-    loopLabelText.textContent = 'First';
-    loopSecs.style.display = 'inline-block';
-    loopSecsLabel.style.display = 'inline';
-    loopTimes.style.display = 'inline-block';
-    loopTimesLabel.style.display = 'inline';
-    loopHint.style.display = 'none';
+// Enable the trim card for a real playable video; show a hint otherwise.
+function setTrimEnabled(scrubbable, url) {
+  stopPreview();
+  trimScrubbable = false;
+  videoDuration = 0; trimStart = 0; trimEnd = 0;
+  setRepeat(1);
+  if (scrubbable && url) {
+    trimRow.classList.remove('disabled');
+    trimEmpty.style.display = 'none';
+    trimEditor.style.display = 'block';
+    trimReadout.textContent = 'loading…';
+    trimVideo.src = url;
   } else {
-    loopLabelText.textContent = 'Loop';
-    loopSecs.style.display = 'none';
-    loopSecsLabel.style.display = 'none';
-    loopTimes.style.display = 'none';
-    loopTimesLabel.style.display = 'none';
-    loopHint.style.display = 'block';
-    loopHint.textContent = 'plays the whole video once';
+    trimRow.classList.add('disabled');
+    trimEditor.style.display = 'none';
+    trimEmpty.style.display = 'block';
+    trimEmpty.textContent = url ? "can't trim embeds — plays full" : 'load a video to trim';
+    try { trimVideo.removeAttribute('src'); trimVideo.load(); } catch {}
   }
 }
 
-function setLoopRowEnabled(enabled) {
-  loopRow.classList.toggle('disabled', !enabled);
-  if (!enabled) {
-    loopEnabled = false;
-    loopChk.classList.remove('checked');
-    loopChk.textContent = '';
-    loopRow.classList.remove('loop-active');
-    loopLabelText.textContent = 'Loop';
-    loopSecs.style.display = 'none';
-    loopSecsLabel.style.display = 'none';
-    loopTimes.style.display = 'none';
-    loopTimesLabel.style.display = 'none';
-    loopHint.style.display = 'block';
-    loopHint.textContent = 'load a video first';
-  } else {
-    loopHint.textContent = 'plays the whole video once';
-  }
+trimVideo.addEventListener('loadedmetadata', () => {
+  videoDuration = trimVideo.duration || 0;
+  if (!isFinite(videoDuration) || videoDuration <= 0) { trimPreviewUnavailable(); return; }
+  trimScrubbable = true;
+  trimStart = 0; trimEnd = videoDuration;
+  renderTrim();
+});
+trimVideo.addEventListener('error', trimPreviewUnavailable);
+
+function trimPreviewUnavailable() {
+  trimScrubbable = false; videoDuration = 0;
+  trimEditor.style.display = 'none';
+  trimEmpty.style.display = 'block';
+  trimEmpty.textContent = 'preview unavailable — plays full';
 }
+
+function renderTrim() {
+  const a = videoDuration ? (trimStart / videoDuration) * 100 : 0;
+  const b = videoDuration ? (trimEnd   / videoDuration) * 100 : 100;
+  trimRange.style.left  = a + '%';
+  trimRange.style.width = (b - a) + '%';
+  trimHStart.style.left = a + '%';
+  trimHEnd.style.left   = b + '%';
+  const dur = Math.max(0, trimEnd - trimStart);
+  trimReadout.textContent = `${fmtClock(trimStart)} → ${fmtClock(trimEnd)} · ${dur.toFixed(1)}s`;
+}
+
+function trackToTime(clientX) {
+  const r = trimTrack.getBoundingClientRect();
+  const ratio = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+  return ratio * videoDuration;
+}
+
+function startDrag(which, e) {
+  if (!trimScrubbable || !videoDuration) return;
+  trimDragging = which;
+  stopPreview();
+  trimVideo.pause();
+  window.addEventListener('pointermove', onDragMove);
+  window.addEventListener('pointerup', endDrag, { once: true });
+  e.preventDefault();
+}
+function onDragMove(e) {
+  if (!trimDragging) return;
+  const t = trackToTime(e.clientX);
+  if (trimDragging === 'start') {
+    trimStart = Math.max(0, Math.min(t, trimEnd - 0.1));
+    try { trimVideo.currentTime = trimStart; } catch {}
+  } else {
+    trimEnd = Math.min(videoDuration, Math.max(t, trimStart + 0.1));
+    try { trimVideo.currentTime = trimEnd; } catch {}
+  }
+  renderTrim();
+}
+function endDrag() {
+  trimDragging = null;
+  window.removeEventListener('pointermove', onDragMove);
+}
+trimHStart.addEventListener('pointerdown', (e) => startDrag('start', e));
+trimHEnd.addEventListener('pointerdown', (e) => startDrag('end', e));
+
+// ── Preview the selected segment ──
+trimPreviewBtn.addEventListener('click', previewSegment);
+function previewSegment() {
+  if (!trimScrubbable || !videoDuration) return;
+  if (previewStop) { stopPreview(); return; }
+  trimPlayhead.style.display = 'block';
+  try { trimVideo.currentTime = trimStart; } catch {}
+  trimVideo.play().catch(() => {});
+  trimPreviewBtn.textContent = '⏸ Stop';
+  const onTime = () => {
+    const pct = videoDuration ? (trimVideo.currentTime / videoDuration) * 100 : 0;
+    trimPlayhead.style.left = pct + '%';
+    if (trimVideo.currentTime >= trimEnd) stopPreview();
+  };
+  previewStop = () => trimVideo.removeEventListener('timeupdate', onTime);
+  trimVideo.addEventListener('timeupdate', onTime);
+}
+function stopPreview() {
+  if (previewStop) { previewStop(); previewStop = null; }
+  try { trimVideo.pause(); } catch {}
+  trimPlayhead.style.display = 'none';
+  trimPreviewBtn.textContent = '▶ Preview';
+}
+
+// ── Repeat (× N) ──
+function setRepeat(n) {
+  trimRepeat = Math.min(10, Math.max(1, n));
+  trimRepVal.textContent = trimRepeat + '×';
+}
+document.getElementById('trim-rep-dn').addEventListener('click', () => setRepeat(trimRepeat - 1));
+document.getElementById('trim-rep-up').addEventListener('click', () => setRepeat(trimRepeat + 1));
 
 // ── Drag and drop ─────────────────────────────────────────────────────────────
 let dragCounter = 0;
@@ -321,13 +406,23 @@ async function uploadFile(file) {
   }
 }
 
-function setMediaUrl(url, label, isVideo = false) {
+function isEmbedUrl(u) {
+  return /tiktok\.com|(?:twitter\.com|x\.com)|youtube\.com|youtu\.be/.test(u || '');
+}
+
+// opts: { scrubbable, previewUrl }
+//   url       — what actually gets sent (original link for TikTok/Twitter, so the
+//               server re-resolves a fresh CDN url at drop time)
+//   previewUrl — the direct, seekable mp4 to load into the trim timeline
+function setMediaUrl(url, label, isVideo = false, opts = {}) {
   mediaUrl = url; mediaIsVideo = isVideo; urlPaste.value = '';
   dropZone.classList.add('has-url');
   urlText.textContent = label || url;
   clearUrlBtn.style.display = 'block';
   saveClipBtn.style.display = isVideo ? 'block' : 'none';
-  setLoopRowEnabled(isVideo);
+  const scrubbable = opts.scrubbable ?? (isVideo && !isEmbedUrl(url));
+  const previewUrl = scrubbable ? (opts.previewUrl || url) : (isVideo ? url : null);
+  setTrimEnabled(scrubbable, previewUrl);
 }
 
 function clearMedia() {
@@ -336,24 +431,47 @@ function clearMedia() {
   urlText.textContent = 'Drop a file here, or paste a URL below';
   clearUrlBtn.style.display = 'none';
   saveClipBtn.style.display = 'none';
-  setLoopRowEnabled(false);
+  setTrimEnabled(false, null);
 }
 clearUrlBtn.addEventListener('click', clearMedia);
 
-urlPaste.addEventListener('keydown', (e) => { if (e.key === 'Enter') { applyPastedUrl(); send(); } });
-urlPaste.addEventListener('blur', applyPastedUrl);
-function applyPastedUrl() {
+urlPaste.addEventListener('keydown', async (e) => { if (e.key === 'Enter') { await applyPastedUrl(); send(); } });
+urlPaste.addEventListener('blur', () => applyPastedUrl());
+async function applyPastedUrl() {
   const v = urlPaste.value.trim();
   if (!v.startsWith('http')) return;
-  if (/tiktok\.com\/@[\w.]+\/video\/\d+/.test(v)) {
-    setMediaUrl(v, '🎵 TikTok video', true); return;
+
+  // TikTok / Twitter resolve to a direct, seekable mp4 → trimmable via playback.
+  // We keep the ORIGINAL link as mediaUrl so the server re-resolves a fresh CDN
+  // url at drop time, and use the resolved mp4 only for the scrub preview.
+  const isTikTok  = /tiktok\.com\/@[\w.]+\/video\/\d+/.test(v);
+  const isTwitter = /(?:twitter\.com|x\.com)\/\w+\/status\/\d+/.test(v);
+  if (isTikTok || isTwitter) {
+    const label = isTikTok ? '🎵 TikTok video' : '🐦 Twitter / X video';
+    setStatus('Resolving…');
+    try {
+      const r = await window.sender.resolveLink(v);
+      if (r && r.type === 'video' && r.url) {
+        setMediaUrl(v, label, true, { scrubbable: true, previewUrl: r.url });
+        setStatus('✓ ready to trim', 'ok');
+        setTimeout(() => setStatus(''), 1200);
+      } else {
+        setMediaUrl(v, label, true, { scrubbable: false });
+        setStatus("couldn't trim this one — plays full");
+        setTimeout(() => setStatus(''), 2000);
+      }
+    } catch {
+      setMediaUrl(v, label, true, { scrubbable: false });
+      setStatus('');
+    }
+    return;
   }
-  if (/(?:twitter\.com|x\.com)\/\w+\/status\/\d+/.test(v)) {
-    setMediaUrl(v, '🐦 Twitter / X post', true); return;
-  }
+
+  // YouTube stays a full-play embed for now (no direct url to scrub).
   if (/(?:youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/.test(v)) {
-    setMediaUrl(v, '▶️ YouTube video', true); return;
+    setMediaUrl(v, '▶️ YouTube video', true, { scrubbable: false }); return;
   }
+
   const ext = v.split('.').pop().split('?')[0].toLowerCase();
   const isVid = ['mp4', 'webm'].includes(ext);
   setMediaUrl(v, v, isVid);
@@ -413,13 +531,19 @@ function formatTime(s) { return `${String(Math.floor(s/60)).padStart(2,'0')}:${S
 sendBtn.addEventListener('click', send);
 
 async function send() {
-  applyPastedUrl();
+  await applyPastedUrl();
   const url          = mediaUrl || null;
   const target       = targetSel.value || null;
   const caption      = capInput.value.trim() || null;
   const effects      = [...activeEffects];
-  const loopDuration = loopEnabled ? (parseInt(loopSecs.value) || 10) : null;
-  const loopTimesVal = loopEnabled ? (parseInt(loopTimes.value) || 1) : null;
+
+  // Trim: send a segment when the user moved a handle OR wants it repeated.
+  const wantRepeat  = trimScrubbable && trimRepeat > 1;
+  const useTrim     = trimScrubbable && videoDuration > 0 &&
+                      (trimStart > 0.05 || trimEnd < videoDuration - 0.05 || wantRepeat);
+  const trimStartVal = useTrim ? +Math.max(0, trimStart).toFixed(2) : null;
+  const trimEndVal   = useTrim ? +Math.min(videoDuration, trimEnd).toFixed(2) : null;
+  const loopTimesVal = useTrim ? trimRepeat : null;
 
   if (!url && !audioBlob) { setStatus('Add a URL, drop a file, or record audio', 'err'); return; }
 
@@ -436,9 +560,11 @@ async function send() {
     const drop = effectiveDrop();
     const result = await window.sender.sendDrop({
       url, target, caption, effects, audioUrl,
-      loop: loopEnabled,
-      loopDuration,
+      loop: false,
+      loopDuration: null,
       loopTimes: loopTimesVal,
+      trimStart: trimStartVal,
+      trimEnd: trimEndVal,
       size: drop.size,
       positionX: drop.positionX,
       positionY: drop.positionY,
@@ -462,9 +588,11 @@ async function send() {
         positionX:    drop.positionX,
         positionY:    drop.positionY,
         effects,
-        loop:         loopEnabled,
-        loopDuration: loopEnabled ? (parseInt(loopSecs.value) || 10) : null,
+        loop:         false,
+        loopDuration: null,
         loopTimes:    loopTimesVal,
+        trimStart:    trimStartVal,
+        trimEnd:      trimEndVal,
         target:       target || null,
       });
       resetForm();

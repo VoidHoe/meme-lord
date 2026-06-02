@@ -246,7 +246,14 @@ async function resolveMedia(url) {
   return media;
 }
 
-ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audioUrl, loop, loopDuration, loopTimes, size, positionX, positionY }) => {
+// Resolve a pasted link (TikTok/Twitter → direct seekable mp4 when possible) so
+// the sender can scrub it in the trim timeline without downloading anything.
+ipcMain.handle('resolve-link', async (_event, url) => {
+  try { return await resolveMedia(url); }
+  catch (err) { return { error: err.message }; }
+});
+
+ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audioUrl, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY }) => {
   try {
     const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
 
@@ -261,6 +268,8 @@ ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audi
       loop:         loop    ?? false,
       loopDuration: loopDuration || null,
       loopTimes:    loopTimes || null,
+      trimStart:    trimStart ?? null,
+      trimEnd:      trimEnd ?? null,
       size:         size    || 'm',
       positionX:    positionX ?? null,
       positionY:    positionY ?? null,

@@ -113,25 +113,47 @@
     .poslabel { font-size: 11px; color: var(--faint); }
     .poslabel b { color: var(--muted); display:block; font-size:12px; margin-bottom:3px; }
 
-    /* ── Loop card ── */
-    #loop-row.disabled { opacity: 0.4; pointer-events: none; }
-    .loopline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    #loop-chk {
-      -webkit-app-region: no-drag; width: 38px; height: 21px; border-radius: 20px; background: #2a2540;
-      position: relative; flex-shrink: 0; cursor: pointer; transition: background .15s; font-size: 0;
+    /* ── Trim card ── */
+    #trim-row.disabled { opacity: 0.4; pointer-events: none; }
+    #trim-empty { font-size: 11px; color: var(--faint); font-style: italic; padding: 4px 0 2px; }
+    #trim-editor { display: flex; flex-direction: column; gap: 9px; }
+    #trim-video {
+      width: 100%; max-height: 130px; border-radius: 10px; background: #000;
+      object-fit: contain; display: block;
     }
-    #loop-chk::after { content:''; position:absolute; top:2.5px; left:2.5px; width:16px; height:16px; border-radius:50%; background:#fff; transition: transform .15s; }
-    #loop-chk.checked { background: var(--grad); box-shadow: 0 2px 10px rgba(168,85,247,.4); }
-    #loop-chk.checked::after { transform: translateX(17px); }
-    .loop-label { font-size: 12.5px; color: var(--text); cursor: pointer; }
-    #loop-hint { margin-left: auto; font-size: 10.5px; color: var(--faint); font-style: italic; }
-    #loop-secs, #loop-times {
-      background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px;
-      color: var(--violet); width: 46px; text-align: center; font-weight: 700; font-size: 12px;
-      outline: none; font-family: inherit;
+    #trim-track {
+      -webkit-app-region: no-drag; position: relative; height: 26px; border-radius: 8px;
+      background: var(--bg); border: 1px solid var(--line); cursor: pointer; touch-action: none;
     }
-    #loop-secs:focus, #loop-times:focus { border-color: var(--violet); }
-    #loop-secs-label, #loop-times-label { color: var(--faint); font-size: 12px; }
+    #trim-range {
+      position: absolute; top: 0; bottom: 0; left: 0; width: 100%;
+      background: rgba(167,139,250,.22); border-left: 2px solid var(--violet); border-right: 2px solid var(--violet);
+    }
+    .trim-handle {
+      -webkit-app-region: no-drag; position: absolute; top: 50%; width: 14px; height: 30px;
+      transform: translate(-50%, -50%); border-radius: 5px; background: var(--grad);
+      box-shadow: 0 2px 8px rgba(168,85,247,.5); cursor: ew-resize; touch-action: none; z-index: 2;
+    }
+    #trim-playhead {
+      position: absolute; top: -2px; bottom: -2px; left: 0; width: 2px;
+      background: #fff; box-shadow: 0 0 6px rgba(255,255,255,.8); pointer-events: none; z-index: 1; display: none;
+    }
+    #trim-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    #trim-readout { font-size: 11.5px; color: var(--violet); font-weight: 700; font-variant-numeric: tabular-nums; }
+    #trim-rep { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--faint); }
+    #trim-rep button {
+      -webkit-app-region: no-drag; width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line);
+      background: var(--bg); color: var(--violet); font-size: 14px; font-weight: 800; cursor: pointer; line-height: 1;
+      font-family: inherit;
+    }
+    #trim-rep button:hover { border-color: var(--violet); }
+    #trim-rep-val { color: var(--text); font-weight: 700; min-width: 18px; text-align: center; }
+    #trim-preview-btn {
+      -webkit-app-region: no-drag; margin-left: auto; background: var(--bg); border: 1px solid var(--line);
+      border-radius: 8px; color: var(--muted); font-size: 11px; font-weight: 600; padding: 6px 11px;
+      cursor: pointer; font-family: inherit; transition: all .15s;
+    }
+    #trim-preview-btn:hover { border-color: var(--violet); color: var(--violet); }
 
     /* ── Duo (effects + voice) ── */
     .duo { display: flex; gap: 13px; }
@@ -348,17 +370,23 @@
         </div>
       </div>
 
-      <!-- Loop -->
-      <div class="card disabled" id="loop-row">
-        <div class="ch"><div class="badge">🔁</div><div class="t">Loop</div></div>
-        <div class="loopline">
-          <div id="loop-chk"></div>
-          <span class="loop-label"><span id="loop-label-text">Loop</span></span>
-          <input id="loop-secs" type="number" value="10" min="1" max="300" style="display:none" />
-          <span id="loop-secs-label" style="display:none">sec ×</span>
-          <input id="loop-times" type="number" value="2" min="1" max="20" style="display:none" />
-          <span id="loop-times-label" style="display:none">times</span>
-          <span id="loop-hint">load a video first</span>
+      <!-- Trim -->
+      <div class="card disabled" id="trim-row">
+        <div class="ch"><div class="badge">✂️</div><div class="t">Trim</div></div>
+        <div id="trim-empty">load a video to trim</div>
+        <div id="trim-editor" style="display:none">
+          <video id="trim-video" muted playsinline preload="metadata"></video>
+          <div id="trim-track">
+            <div id="trim-range"></div>
+            <div id="trim-playhead"></div>
+            <div class="trim-handle" id="trim-h-start"></div>
+            <div class="trim-handle" id="trim-h-end"></div>
+          </div>
+          <div id="trim-meta">
+            <span id="trim-readout">0:00 → 0:00 · 0.0s</span>
+            <span id="trim-rep">🔁 <button id="trim-rep-dn">−</button><span id="trim-rep-val">1×</span><button id="trim-rep-up">+</button></span>
+            <button id="trim-preview-btn">▶ Preview</button>
+          </div>
         </div>
       </div>
 

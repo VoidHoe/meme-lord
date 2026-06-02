@@ -86,7 +86,7 @@ app.post('/api/upload-media', express.raw({ type: '*/*', limit: '50mb' }), (req,
 // API drop directe (depuis l'overlay app, sans passer par Discord)
 app.post('/api/drop', (req, res) => {
   const { media, audio, effects, target, caption, positionX, positionY,
-          loop, loopDuration, loopTimes, size } = req.body;
+          loop, loopDuration, loopTimes, trimStart, trimEnd, size } = req.body;
   if (!media && !audio) return res.status(400).json({ error: 'media ou audio requis' });
 
   router.dispatch({
@@ -100,6 +100,8 @@ app.post('/api/drop', (req, res) => {
     loop:         loop      ?? false,
     loopDuration: loopDuration || null,
     loopTimes:    loopTimes || null,
+    trimStart:    trimStart ?? null,
+    trimEnd:      trimEnd ?? null,
     size:         size      || 'm',
   });
 
