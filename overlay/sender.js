@@ -47,6 +47,10 @@ const loopHint    = document.getElementById('loop-hint');
 const historyView  = document.getElementById('history-view');
 const historyList  = document.getElementById('history-list');
 const historyEmpty = document.getElementById('history-empty');
+const libraryView  = document.getElementById('library-view');
+const libraryGrid  = document.getElementById('library-grid');
+const libraryEmpty = document.getElementById('library-empty');
+const saveClipBtn  = document.getElementById('save-clip-btn');
 
 // ── GIF slide panel ───────────────────────────────────────────────────────────
 document.getElementById('open-gif-btn').addEventListener('click', openGifView);
@@ -307,6 +311,7 @@ function setMediaUrl(url, label, isVideo = false) {
   dropZone.classList.add('has-url');
   urlText.textContent = label || url;
   clearUrlBtn.style.display = 'block';
+  saveClipBtn.style.display = isVideo ? 'block' : 'none';
   setLoopRowEnabled(isVideo);
 }
 
@@ -315,6 +320,7 @@ function clearMedia() {
   dropZone.classList.remove('has-url');
   urlText.textContent = 'Drop a file here, or paste a URL below';
   clearUrlBtn.style.display = 'none';
+  saveClipBtn.style.display = 'none';
   setLoopRowEnabled(false);
 }
 clearUrlBtn.addEventListener('click', clearMedia);
@@ -351,8 +357,10 @@ document.querySelectorAll('.chip').forEach(chip => {
 document.getElementById('close-btn').addEventListener('click', () => window.sender.close());
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (gifView.classList.contains('slide-in')) closeGifView();
+    if (document.getElementById('lib-modal').classList.contains('open')) { closeLibModal(); }
+    else if (gifView.classList.contains('slide-in')) closeGifView();
     else if (historyView.classList.contains('slide-in')) closeHistoryView();
+    else if (libraryView.classList.contains('slide-in')) closeLibraryView();
     else window.sender.close();
   }
 });
@@ -540,3 +548,157 @@ function resetForm() {
   micBtn.className = ''; micBtn.innerHTML = '🎤 Record';
   voiceLabel.textContent = 'No recording'; voiceLabel.className = '';
 }
+
+// ── Clip library ──────────────────────────────────────────────────────────────
+const SITUATIONS = [
+  { id: 'w',          label: '🏆 W / Flex' },
+  { id: 'cooked',     label: '💀 Cooked' },
+  { id: 'clown',      label: '🤡 Clown' },
+  { id: 'aura',       label: '🥶 Aura' },
+  { id: 'disrespect', label: '😤 Disrespect' },
+  { id: 'copium',     label: '😭 Copium' },
+  { id: 'hype',       label: '🔥 Hype' },
+  { id: 'sus',        label: '👀 Sus' },
+];
+const SIT_LABEL = Object.fromEntries(SITUATIONS.map(s => [s.id, s.label]));
+let activeSituation = 'all';
+let pickedSituation = 'w';
+let libraryCache = [];
+
+document.getElementById('open-library-btn').addEventListener('click', openLibraryView);
+document.getElementById('library-back-btn').addEventListener('click', closeLibraryView);
+
+async function openLibraryView() {
+  buildSituationFilter();
+  dropView.classList.add('slide-out');
+  libraryView.classList.add('slide-in');
+  await renderLibrary();
+}
+function closeLibraryView() {
+  dropView.classList.remove('slide-out');
+  libraryView.classList.remove('slide-in');
+}
+
+function buildSituationFilter() {
+  const wrap = document.getElementById('situation-filter');
+  wrap.innerHTML = '';
+  const all = ['all', ...SITUATIONS.map(s => s.id)];
+  all.forEach(id => {
+    const chip = document.createElement('div');
+    chip.className = 'sit-chip' + (id === activeSituation ? ' active' : '');
+    chip.textContent = id === 'all' ? '✨ All' : SIT_LABEL[id];
+    chip.addEventListener('click', () => {
+      activeSituation = id;
+      buildSituationFilter();
+      renderLibrary();
+    });
+    wrap.appendChild(chip);
+  });
+}
+
+async function renderLibrary() {
+  libraryCache = await window.sender.libraryList();
+  const items = libraryCache.filter(c => activeSituation === 'all' || c.situation === activeSituation);
+  libraryGrid.innerHTML = '';
+  if (!items.length) {
+    libraryEmpty.style.display = 'block';
+    libraryEmpty.textContent = libraryCache.length
+      ? 'No clips in this situation yet'
+      : 'No clips saved yet — paste a video and hit ★ Save';
+    return;
+  }
+  libraryEmpty.style.display = 'none';
+  items.forEach(entry => {
+    const tile = document.createElement('div');
+    tile.className = 'clip-tile';
+
+    const vid = document.createElement('video');
+    vid.src = `clip://clips/${entry.file}`;
+    vid.muted = true; vid.preload = 'metadata'; vid.playsInline = true;
+    tile.addEventListener('mouseenter', () => { vid.play().catch(() => {}); });
+    tile.addEventListener('mouseleave', () => { vid.pause(); vid.currentTime = 0; });
+
+    const name = document.createElement('div');
+    name.className = 'clip-name';
+    name.textContent = entry.name;
+
+    const del = document.createElement('button');
+    del.className = 'clip-del'; del.textContent = '✕';
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      libraryCache = await window.sender.libraryDelete(entry.id);
+      renderLibrary();
+    });
+
+    tile.addEventListener('click', () => sendLibraryClip(entry, tile));
+    tile.appendChild(vid); tile.appendChild(del); tile.appendChild(name);
+    libraryGrid.appendChild(tile);
+  });
+}
+
+async function sendLibraryClip(entry, tile) {
+  const busy = document.createElement('div');
+  busy.className = 'clip-sending'; busy.textContent = 'Sending…';
+  tile.appendChild(busy);
+  try {
+    const up = await window.sender.libraryUpload(entry.id);
+    if (up.error || !up.url) throw new Error(up.error || 'upload failed');
+    const pos = ANCHOR_MAP[selectedAnchor] || ANCHOR_MAP['center'];
+    const result = await window.sender.sendDrop({
+      url: up.url, target: targetSel.value || null, caption: null, effects: [], audioUrl: null,
+      loop: false, loopDuration: null, loopTimes: null,
+      size: selectedSize, positionX: pos.positionX, positionY: pos.positionY,
+    });
+    busy.textContent = result.ok ? '✓ Dropped!' : '✗ failed';
+  } catch (err) {
+    busy.textContent = '✗ ' + err.message;
+  }
+  setTimeout(() => busy.remove(), 1000);
+}
+
+// ── Save-to-library modal ──
+saveClipBtn.addEventListener('click', openLibModal);
+
+function openLibModal() {
+  if (!mediaUrl) return;
+  pickedSituation = 'w';
+  const nameInput = document.getElementById('lib-name-input');
+  nameInput.value = (capInput.value.trim() || '').slice(0, 60);
+  buildSituationPicker();
+  document.getElementById('lib-modal').classList.add('open');
+  setTimeout(() => nameInput.focus(), 50);
+}
+function closeLibModal() {
+  document.getElementById('lib-modal').classList.remove('open');
+}
+
+function buildSituationPicker() {
+  const wrap = document.getElementById('lib-situation-pick');
+  wrap.innerHTML = '';
+  SITUATIONS.forEach(s => {
+    const chip = document.createElement('div');
+    chip.className = 'sit-chip' + (s.id === pickedSituation ? ' active' : '');
+    chip.textContent = s.label;
+    chip.addEventListener('click', () => { pickedSituation = s.id; buildSituationPicker(); });
+    wrap.appendChild(chip);
+  });
+}
+
+document.getElementById('lib-save-ok').addEventListener('click', async () => {
+  if (!mediaUrl) return;
+  const okBtn = document.getElementById('lib-save-ok');
+  const name = document.getElementById('lib-name-input').value.trim() || 'Clip';
+  okBtn.disabled = true; okBtn.textContent = 'Saving…';
+  const res = await window.sender.librarySave({ url: mediaUrl, name, situation: pickedSituation });
+  okBtn.disabled = false; okBtn.textContent = 'Save';
+  if (res.error) { setStatus('✗ ' + res.error, 'err'); setTimeout(() => setStatus(''), 2500); return; }
+  closeLibModal();
+  setStatus('📚 Saved to library!', 'ok');
+  setTimeout(() => setStatus(''), 1500);
+  if (libraryView.classList.contains('slide-in')) renderLibrary();
+});
+
+document.getElementById('lib-save-cancel').addEventListener('click', closeLibModal);
+document.getElementById('lib-name-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('lib-save-ok').click();
+});

@@ -14,5 +14,10 @@ contextBridge.exposeInMainWorld('sender', {
   saveHistory:    (entry)            => ipcRenderer.send('save-history', entry),
   getHistory:     ()                 => ipcRenderer.invoke('get-history'),
   clearHistory:   ()                 => ipcRenderer.invoke('clear-history'),
+  libraryList:    ()                 => ipcRenderer.invoke('library-list'),
+  librarySave:    (payload)          => ipcRenderer.invoke('library-save', payload),
+  librarySaveBuffer: (buffer, name, situation) => ipcRenderer.invoke('library-save-buffer', { buffer, name, situation }),
+  libraryDelete:  (id)               => ipcRenderer.invoke('library-delete', id),
+  libraryUpload:  (id)               => ipcRenderer.invoke('library-upload', id),
   close:          ()                 => ipcRenderer.send('close-sender'),
 });

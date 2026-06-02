@@ -1,6 +1,7 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut, session } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut, session, protocol } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
+const fs = require('fs');
 const Store = require('electron-store');
 const { io } = require('socket.io-client');
 
@@ -20,8 +21,19 @@ const store = new Store({
     anchorPosition: 'center',
     dropSize: 'm',
     history: [],
+    library: [],
   },
 });
+
+// Local clip library — durable reaction clips saved to disk
+const clipsDir = path.join(app.getPath('userData'), 'clips');
+try { fs.mkdirSync(clipsDir, { recursive: true }); } catch {}
+const DEFAULT_SERVER = 'https://memelord-production-3bbf.up.railway.app';
+
+// clip:// streams saved library videos into the sender (must run before app ready)
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'clip', privileges: { secure: true, standard: true, supportFetchAPI: true, stream: true, bypassCSP: true } },
+]);
 
 let overlayWindow    = null;
 let settingsWindow   = null;
@@ -187,53 +199,58 @@ ipcMain.on('open-settings', createSettingsWindow);
 
 // ── Sender — drop direct sans Discord ────────────────────────────────────────
 
+// Resolve a pasted URL into a playable media object { type, url }.
+// TikTok/Twitter resolve to a direct video when possible; otherwise embed.
+async function resolveMedia(url) {
+  if (!url || !url.trim()) return null;
+  const clean = url.trim();
+  const tiktokMatch  = clean.match(/tiktok\.com\/@[\w.]+\/video\/(\d+)/);
+  const twitterMatch = clean.match(/(?:twitter\.com|x\.com)\/([\w]+)\/status\/(\d+)/);
+  const youtubeMatch = clean.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  let media = null;
+
+  if (tiktokMatch) {
+    try {
+      const r = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(clean)}`);
+      const j = await r.json();
+      if (j.code === 0 && j.data?.play) media = { type: 'video', url: j.data.play };
+    } catch(e) {}
+    if (!media) media = { type: 'tiktok', url: `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}` };
+
+  } else if (twitterMatch) {
+    try {
+      const [, username, tweetId] = twitterMatch;
+      const r = await fetch(`https://api.fxtwitter.com/${username}/status/${tweetId}`);
+      const j = await r.json();
+      const videos = j.tweet?.media?.videos || [];
+      const best   = videos.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+      if (best?.url) {
+        media = { type: 'video', url: best.url };
+      } else {
+        const photo = (j.tweet?.media?.photos || [])[0];
+        if (photo?.url) media = { type: 'image', url: photo.url };
+      }
+    } catch(e) {}
+    if (!media) media = { type: 'twitter', url: `https://platform.twitter.com/embed/Tweet.html?id=${twitterMatch[2]}&theme=dark&dnt=true` };
+
+  } else if (youtubeMatch) {
+    media = { type: 'youtube', url: clean };
+
+  } else {
+    const ext = clean.split('.').pop().split('?')[0].toLowerCase();
+    let type = 'image';
+    if (ext === 'gif')                      type = 'gif';
+    else if (['mp4', 'webm'].includes(ext)) type = 'video';
+    media = { type, url: clean };
+  }
+  return media;
+}
+
 ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audioUrl, loop, loopDuration, loopTimes, size, positionX, positionY }) => {
   try {
-    const serverUrl = store.get('serverUrl') || 'https://memelord-production-3bbf.up.railway.app';
+    const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
 
-    // Détecter le type de media depuis l'URL
-    let media = null;
-    if (url && url.trim()) {
-      const clean = url.trim();
-      const tiktokMatch  = clean.match(/tiktok\.com\/@[\w.]+\/video\/(\d+)/);
-      const twitterMatch = clean.match(/(?:twitter\.com|x\.com)\/([\w]+)\/status\/(\d+)/);
-      const youtubeMatch = clean.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
-
-      if (tiktokMatch) {
-        try {
-          const r = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(clean)}`);
-          const j = await r.json();
-          if (j.code === 0 && j.data?.play) media = { type: 'video', url: j.data.play };
-        } catch(e) {}
-        if (!media) media = { type: 'tiktok', url: `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}` };
-
-      } else if (twitterMatch) {
-        try {
-          const [, username, tweetId] = twitterMatch;
-          const r = await fetch(`https://api.fxtwitter.com/${username}/status/${tweetId}`);
-          const j = await r.json();
-          const videos = j.tweet?.media?.videos || [];
-          const best   = videos.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
-          if (best?.url) {
-            media = { type: 'video', url: best.url };
-          } else {
-            const photo = (j.tweet?.media?.photos || [])[0];
-            if (photo?.url) media = { type: 'image', url: photo.url };
-          }
-        } catch(e) {}
-        if (!media) media = { type: 'twitter', url: `https://platform.twitter.com/embed/Tweet.html?id=${twitterMatch[2]}&theme=dark&dnt=true` };
-
-      } else if (youtubeMatch) {
-        media = { type: 'youtube', url: clean };
-
-      } else {
-        const ext = clean.split('.').pop().split('?')[0].toLowerCase();
-        let type = 'image';
-        if (ext === 'gif')                      type = 'gif';
-        else if (['mp4', 'webm'].includes(ext)) type = 'video';
-        media = { type, url: clean };
-      }
-    }
+    const media = await resolveMedia(url);
 
     const event = {
       media,
@@ -308,6 +325,75 @@ ipcMain.on('close-sender', () => {
   if (senderWindow && !senderWindow.isDestroyed()) senderWindow.close();
 });
 
+// ── Clip library ──────────────────────────────────────────────────────────────
+
+function getLibrary() { return store.get('library') || []; }
+
+ipcMain.handle('library-list', () => getLibrary());
+
+// Save a clip from a pasted URL: resolve → download the bytes → store on disk.
+ipcMain.handle('library-save', async (_e, { url, name, situation }) => {
+  try {
+    const media = await resolveMedia(url);
+    if (!media || media.type !== 'video') {
+      return { error: 'Only direct videos, TikTok or Twitter clips can be saved' };
+    }
+    const r = await fetch(media.url);
+    if (!r.ok) return { error: `download failed (${r.status})` };
+    const buf = Buffer.from(await r.arrayBuffer());
+    const id = Date.now().toString();
+    const file = `${id}.mp4`;
+    fs.writeFileSync(path.join(clipsDir, file), buf);
+    const entry = { id, file, name: (name || 'Clip').slice(0, 60), situation: situation || 'w', createdAt: Date.now() };
+    const lib = getLibrary(); lib.unshift(entry); store.set('library', lib);
+    return { ok: true, entry };
+  } catch (err) {
+    console.error('[library] save error:', err.message);
+    return { error: err.message };
+  }
+});
+
+// Save a clip from raw bytes (e.g. a dragged-in file).
+ipcMain.handle('library-save-buffer', async (_e, { buffer, name, situation }) => {
+  try {
+    const id = Date.now().toString();
+    const file = `${id}.mp4`;
+    fs.writeFileSync(path.join(clipsDir, file), Buffer.from(buffer));
+    const entry = { id, file, name: (name || 'Clip').slice(0, 60), situation: situation || 'w', createdAt: Date.now() };
+    const lib = getLibrary(); lib.unshift(entry); store.set('library', lib);
+    return { ok: true, entry };
+  } catch (err) {
+    console.error('[library] save-buffer error:', err.message);
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('library-delete', (_e, id) => {
+  const lib = getLibrary();
+  const entry = lib.find(x => x.id === id);
+  if (entry) { try { fs.unlinkSync(path.join(clipsDir, entry.file)); } catch {} }
+  const next = lib.filter(x => x.id !== id);
+  store.set('library', next);
+  return next;
+});
+
+// Upload a saved clip to the server so it can be dropped (returns { url }).
+ipcMain.handle('library-upload', async (_e, id) => {
+  try {
+    const entry = getLibrary().find(x => x.id === id);
+    if (!entry) return { error: 'clip not found' };
+    const buf = fs.readFileSync(path.join(clipsDir, entry.file));
+    const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+    const res = await fetch(`${serverUrl}/api/upload-media`, {
+      method: 'POST', headers: { 'Content-Type': 'video/mp4' }, body: buf,
+    });
+    return res.json();
+  } catch (err) {
+    console.error('[library] upload error:', err.message);
+    return { error: err.message };
+  }
+});
+
 // ── Favorites ─────────────────────────────────────────────────────────────────
 
 ipcMain.handle('get-favorites', () => store.get('favorites') || []);
@@ -370,6 +456,12 @@ app.whenReady().then(() => {
   // Autoriser l'accès au micro (pour le sender window)
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'media');
+  });
+
+  // Serve saved library clips to the sender via clip://<file>
+  protocol.registerFileProtocol('clip', (request, callback) => {
+    const file = path.basename(decodeURIComponent(request.url.replace(/^clip:\/\//, '')));
+    callback(path.join(clipsDir, file));
   });
 
   createOverlayWindow();

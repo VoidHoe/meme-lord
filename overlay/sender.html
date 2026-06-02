@@ -232,6 +232,57 @@
     #fav-save-cancel { flex: 1; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; color: var(--muted); padding: 10px; cursor: pointer; font-size: 13px; font-family: inherit; }
     #fav-save-cancel:hover { color: var(--text); }
     .modal-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+
+    /* ── Save-to-library button ── */
+    #save-clip-btn {
+      margin-top: 10px; width: 100%; background: rgba(167,139,250,.08);
+      border: 1px solid rgba(167,139,250,.25); border-radius: 11px;
+      color: var(--violet); font-size: 12px; font-weight: 600; padding: 9px;
+      cursor: pointer; font-family: inherit; transition: all .15s;
+    }
+    #save-clip-btn:hover { background: rgba(167,139,250,.16); border-color: var(--violet); }
+
+    /* ── Library view ── */
+    #library-view {
+      position: absolute; inset: 0; padding: 14px 16px;
+      display: flex; flex-direction: column; gap: 12px; background: var(--bg);
+      transform: translateX(100%); transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #library-view.slide-in { transform: translateX(0); }
+
+    /* situation chips (filter + picker) */
+    #situation-filter, #lib-situation-pick { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+    .sit-chip {
+      padding: 6px 11px; border-radius: 20px; border: 1px solid var(--line);
+      background: var(--card); color: var(--muted); font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: all .15s; white-space: nowrap;
+    }
+    .sit-chip:hover { border-color: var(--violet); color: var(--violet); }
+    .sit-chip.active { background: rgba(167,139,250,.16); border-color: var(--violet); color: var(--violet); }
+
+    #library-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; overflow-y: auto; flex: 1; align-content: start; }
+    .clip-tile { position: relative; border-radius: 11px; overflow: hidden; border: 1px solid var(--line); background: var(--card); cursor: pointer; transition: border-color .15s, transform .15s; }
+    .clip-tile:hover { border-color: var(--violet); transform: scale(1.02); }
+    .clip-tile video { width: 100%; aspect-ratio: 16/10; object-fit: cover; display: block; background: #000; }
+    .clip-tile .clip-name { padding: 6px 8px; font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .clip-tile .clip-del { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 6px; border: none; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .15s; }
+    .clip-tile:hover .clip-del { opacity: 1; }
+    .clip-tile .clip-del:hover { background: rgba(248,113,113,.85); }
+    .clip-tile .clip-sending { position: absolute; inset: 0; background: rgba(11,10,18,.7); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--violet); font-weight: 700; }
+    #library-empty { text-align: center; font-size: 12px; color: var(--faint); padding: 30px 16px; flex-shrink: 0; }
+
+    /* ── Library save modal ── */
+    #lib-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.72); align-items: center; justify-content: center; z-index: 99; backdrop-filter: blur(3px); }
+    #lib-modal.open { display: flex; }
+    #lib-modal-box { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; width: 300px; display: flex; flex-direction: column; gap: 11px; box-shadow: 0 20px 60px rgba(0,0,0,0.55); }
+    #lib-name-input { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; font-family: inherit; }
+    #lib-name-input:focus { border-color: var(--violet); }
+    #lib-modal-row { display: flex; gap: 8px; margin-top: 4px; }
+    #lib-save-ok { flex: 1; background: var(--grad); border: none; border-radius: 10px; color: #fff; padding: 10px; cursor: pointer; font-size: 13px; font-weight: 700; font-family: inherit; }
+    #lib-save-ok:hover { filter: brightness(1.1); }
+    #lib-save-ok:disabled { opacity: .5; cursor: default; filter: none; }
+    #lib-save-cancel { flex: 1; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; color: var(--muted); padding: 10px; cursor: pointer; font-size: 13px; font-family: inherit; }
+    #lib-save-cancel:hover { color: var(--text); }
   </style>
 </head>
 <body>
@@ -254,7 +305,8 @@
         <div class="ch">
           <div class="badge">📎</div><div class="t">Media</div>
           <div class="right">
-            <button id="open-history-btn" class="pill-btn">🕐 History</button>
+            <button id="open-library-btn" class="pill-btn">📚 Library</button>
+            <button id="open-history-btn" class="pill-btn">🕐</button>
             <button id="open-gif-btn" class="pill-btn">🔍 GIFs</button>
           </div>
         </div>
@@ -268,6 +320,7 @@
           <span class="lk">🔗</span>
           <input id="url-paste" type="text" placeholder="…or paste a link" />
         </div>
+        <button id="save-clip-btn" style="display:none">★ Save to library</button>
       </div>
 
       <!-- Size & Position -->
@@ -351,6 +404,18 @@
       <div id="history-empty">No drops sent yet</div>
     </div>
 
+    <!-- ── Library view (slides in) ── -->
+    <div id="library-view">
+      <div class="view-nav">
+        <button id="library-back-btn">← Back</button>
+        <div class="view-title">Clip Library</div>
+        <span style="width:54px"></span>
+      </div>
+      <div id="situation-filter"></div>
+      <div id="library-grid"></div>
+      <div id="library-empty">No clips saved yet — paste a video and hit ★ Save</div>
+    </div>
+
     <!-- ── GIF search view (slides in) ── -->
     <div id="gif-view">
       <div class="view-nav">
@@ -363,6 +428,20 @@
       <div id="gif-status">Type something to search</div>
     </div>
 
+  </div>
+
+  <!-- Save-to-library modal -->
+  <div id="lib-modal">
+    <div id="lib-modal-box">
+      <div class="modal-label">Save clip to library</div>
+      <input id="lib-name-input" type="text" placeholder="Name — e.g. Ronaldo SIUUU" />
+      <div class="modal-label" style="margin-top:2px">Which situation?</div>
+      <div id="lib-situation-pick"></div>
+      <div id="lib-modal-row">
+        <button id="lib-save-ok">Save</button>
+        <button id="lib-save-cancel">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <!-- Save favorite modal -->
