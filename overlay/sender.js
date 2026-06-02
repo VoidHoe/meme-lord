@@ -645,30 +645,31 @@ async function renderLibrary() {
       renderLibrary();
     });
 
-    tile.addEventListener('click', () => sendLibraryClip(entry, tile));
+    tile.addEventListener('click', () => loadLibraryClip(entry, tile));
     tile.appendChild(vid); tile.appendChild(del); tile.appendChild(name);
     libraryGrid.appendChild(tile);
   });
 }
 
-async function sendLibraryClip(entry, tile) {
+// Clicking a library clip loads its media into the main drop view so you can
+// add a caption, pick size/position, etc. before sending — it no longer sends instantly.
+async function loadLibraryClip(entry, tile) {
   const busy = document.createElement('div');
-  busy.className = 'clip-sending'; busy.textContent = 'Sending…';
+  busy.className = 'clip-sending'; busy.textContent = 'Loading…';
   tile.appendChild(busy);
   try {
     const up = await window.sender.libraryUpload(entry.id);
     if (up.error || !up.url) throw new Error(up.error || 'upload failed');
-    const drop = effectiveDrop();
-    const result = await window.sender.sendDrop({
-      url: up.url, target: targetSel.value || null, caption: null, effects: [], audioUrl: null,
-      loop: false, loopDuration: null, loopTimes: null,
-      size: drop.size, positionX: drop.positionX, positionY: drop.positionY,
-    });
-    busy.textContent = result.ok ? '✓ Dropped!' : '✗ failed';
+    setMediaUrl(up.url, entry.name, true);
+    busy.remove();
+    closeLibraryView();
+    capInput.focus();
+    setStatus('✓ Loaded — add a caption & send', 'ok');
+    setTimeout(() => setStatus(''), 2000);
   } catch (err) {
     busy.textContent = '✗ ' + err.message;
+    setTimeout(() => busy.remove(), 1500);
   }
-  setTimeout(() => busy.remove(), 1000);
 }
 
 // ── Save-to-library modal ──
