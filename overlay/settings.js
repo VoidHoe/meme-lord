@@ -9,6 +9,8 @@ window.memedrop.getSettings().then(settings => {
       ? Math.round((settings[key] || 5000) / 1000)
       : (settings[key] ?? el.value);
   });
+  const thEl = document.getElementById('tryhardMode');
+  if (thEl) thEl.checked = !!settings.tryhardMode;
   updateRangeDisplays();
 });
 
@@ -69,6 +71,8 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
     const val = el.type === 'range' ? Number(el.value) : el.value;
     newSettings[key] = key === 'duration' ? val * 1000 : val;
   });
+  const thEl = document.getElementById('tryhardMode');
+  if (thEl) newSettings.tryhardMode = thEl.checked;
   await window.memedrop.saveSettings(newSettings);
   const status = document.getElementById('status');
   status.textContent = '✅ Sauvegardé !';

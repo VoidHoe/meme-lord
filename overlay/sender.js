@@ -12,6 +12,7 @@ let loopEnabled    = false;
 let selectedAnchor = 'center';
 let selectedSize   = 'm';
 let pendingSaveFav = null;
+let tryhardMode    = false;
 
 // Anchor → overlay positionX/positionY mapping
 const ANCHOR_MAP = {
@@ -21,6 +22,14 @@ const ANCHOR_MAP = {
   'bottom-left':  { positionX: 15, positionY: 85 },
   'bottom-right': { positionX: 85, positionY: 85 },
 };
+
+// Tryhard mode forces medium size, top-right corner on every drop.
+function effectiveDrop() {
+  const anchor = tryhardMode ? 'top-right' : selectedAnchor;
+  const size   = tryhardMode ? 'm' : selectedSize;
+  const pos    = ANCHOR_MAP[anchor] || ANCHOR_MAP['center'];
+  return { size, positionX: pos.positionX, positionY: pos.positionY };
+}
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const dropZone    = document.getElementById('drop-zone');
@@ -146,6 +155,11 @@ async function resendHistoryEntry(entry, btn) {
   btn.disabled = true;
   btn.textContent = '…';
   try {
+    const drop = tryhardMode ? effectiveDrop() : {
+      size:      entry.size      || 'm',
+      positionX: entry.positionX ?? null,
+      positionY: entry.positionY ?? null,
+    };
     const result = await window.sender.sendDrop({
       url:          entry.media?.url || null,
       target:       null,
@@ -155,9 +169,9 @@ async function resendHistoryEntry(entry, btn) {
       loop:         entry.loop         || false,
       loopDuration: entry.loopDuration || null,
       loopTimes:    entry.loopTimes    || null,
-      size:         entry.size         || 'm',
-      positionX:    entry.positionX    ?? null,
-      positionY:    entry.positionY    ?? null,
+      size:         drop.size,
+      positionX:    drop.positionX,
+      positionY:    drop.positionY,
     });
     btn.textContent = result.ok ? '✓' : '✗';
     setTimeout(() => { btn.disabled = false; btn.textContent = '↩ Re-send'; }, 1500);
@@ -176,6 +190,7 @@ document.getElementById('history-clear-btn').addEventListener('click', async () 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.sender.getSettings().then(s => {
   micDeviceId = s.micDeviceId || '';
+  tryhardMode = !!s.tryhardMode;
   const savedAnchor = s.anchorPosition || 'center';
   setAnchor(savedAnchor, false);
   const savedSize = s.dropSize || 'm';
@@ -418,15 +433,15 @@ async function send() {
       audioUrl = r.url;
     }
     setStatus('Sending…');
-    const pos = ANCHOR_MAP[selectedAnchor] || ANCHOR_MAP['center'];
+    const drop = effectiveDrop();
     const result = await window.sender.sendDrop({
       url, target, caption, effects, audioUrl,
       loop: loopEnabled,
       loopDuration,
       loopTimes: loopTimesVal,
-      size: selectedSize,
-      positionX: pos.positionX,
-      positionY: pos.positionY,
+      size: drop.size,
+      positionX: drop.positionX,
+      positionY: drop.positionY,
     });
     if (result.ok) {
       setStatus('✓ Dropped!', 'ok');
@@ -443,9 +458,9 @@ async function send() {
         timestamp:    Date.now(),
         media:        url ? { type: mediaType, url } : null,
         caption,
-        size:         selectedSize,
-        positionX:    pos.positionX,
-        positionY:    pos.positionY,
+        size:         drop.size,
+        positionX:    drop.positionX,
+        positionY:    drop.positionY,
         effects,
         loop:         loopEnabled,
         loopDuration: loopEnabled ? (parseInt(loopSecs.value) || 10) : null,
@@ -643,11 +658,11 @@ async function sendLibraryClip(entry, tile) {
   try {
     const up = await window.sender.libraryUpload(entry.id);
     if (up.error || !up.url) throw new Error(up.error || 'upload failed');
-    const pos = ANCHOR_MAP[selectedAnchor] || ANCHOR_MAP['center'];
+    const drop = effectiveDrop();
     const result = await window.sender.sendDrop({
       url: up.url, target: targetSel.value || null, caption: null, effects: [], audioUrl: null,
       loop: false, loopDuration: null, loopTimes: null,
-      size: selectedSize, positionX: pos.positionX, positionY: pos.positionY,
+      size: drop.size, positionX: drop.positionX, positionY: drop.positionY,
     });
     busy.textContent = result.ok ? '✓ Dropped!' : '✗ failed';
   } catch (err) {

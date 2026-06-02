@@ -25,6 +25,9 @@
     .status { font-size: 12px; color: #22c55e; margin-top: 8px; min-height: 16px; }
     hr { border: none; border-top: 1px solid #333; margin: 20px 0; }
     .hint { font-size: 11px; color: #555; margin-top: 4px; }
+    .toggle-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .toggle-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #7c3aed; cursor: pointer; margin: 0; }
+    .toggle-row label { margin: 0; color: #e0e0e0; font-size: 14px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -70,6 +73,14 @@
     <label>Microphone (pour les notes vocales)</label>
     <select id="micDeviceId"><option value="">Microphone par défaut</option></select>
     <div class="hint">Le micro utilisé pour enregistrer des notes vocales dans le sender</div>
+  </div>
+
+  <div class="field">
+    <div class="toggle-row">
+      <input type="checkbox" id="tryhardMode">
+      <label for="tryhardMode">😤 Tryhard mode</label>
+    </div>
+    <div class="hint">Force chaque drop en taille moyenne, coin haut-droite</div>
   </div>
 
   <button id="saveBtn">💾 Sauvegarder</button>
