@@ -3,3 +3,7 @@ overlay/
 .env
 audio_cache/
 *.log
+.claude/
+.superpowers/
+docs/
+mockups/
