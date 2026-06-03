@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e0e12" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>MemeDrop — Quick Drop</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Password gate -->
+  <div id="gate" class="gate hidden">
+    <div class="gate-card">
+      <div class="logo">📦💥</div>
+      <h1>MemeDrop</h1>
+      <p class="gate-sub">Enter the password to drop</p>
+      <input id="gate-input" type="password" inputmode="text" autocomplete="current-password" placeholder="Password" />
+      <button id="gate-btn">Unlock</button>
+      <div id="gate-err" class="gate-err"></div>
+    </div>
+  </div>
+
+  <!-- Main sender -->
+  <main id="app" class="app hidden">
+    <header class="topbar">
+      <span class="brand">📦💥 Quick Drop</span>
+    </header>
+
+    <!-- Source: file or URL -->
+    <section class="card">
+      <label class="card-label">What are you dropping?</label>
+
+      <label id="file-tile" class="file-tile">
+        <input id="file-input" type="file" accept="image/*,video/*" hidden />
+        <div id="file-empty" class="file-empty">
+          <div class="file-ico">🖼️</div>
+          <div>Tap to pick a photo or video</div>
+        </div>
+        <div id="file-preview" class="file-preview hidden">
+          <img id="preview-img" alt="preview" />
+          <div id="preview-vid" class="preview-vid hidden">🎬 video ready</div>
+          <button id="file-clear" type="button" class="file-clear">✕</button>
+        </div>
+      </label>
+
+      <div class="or">— or paste a link —</div>
+      <input id="url-input" type="url" inputmode="url" autocomplete="off"
+             placeholder="TikTok / Twitter / YouTube / image URL" />
+    </section>
+
+    <!-- Caption -->
+    <section class="card">
+      <label class="card-label" for="caption-input">Caption</label>
+      <input id="caption-input" type="text" maxlength="120" placeholder="optional…" />
+    </section>
+
+    <!-- Target -->
+    <section class="card">
+      <div class="card-row">
+        <label class="card-label" for="target-select">Send to</label>
+        <button id="refresh-btn" type="button" class="mini-btn" title="Refresh">↻</button>
+      </div>
+      <select id="target-select">
+        <option value="">🌍 Everyone</option>
+      </select>
+    </section>
+
+    <!-- Size -->
+    <section class="card">
+      <label class="card-label">Size</label>
+      <div id="size-chips" class="chips">
+        <button type="button" class="chip" data-size="s">S</button>
+        <button type="button" class="chip active" data-size="m">M</button>
+        <button type="button" class="chip" data-size="l">L</button>
+      </div>
+    </section>
+
+    <!-- Position -->
+    <section class="card">
+      <label class="card-label">Position</label>
+      <div id="anchor-grid" class="anchor-grid">
+        <button type="button" class="anchor" data-anchor="top-left"></button>
+        <span class="anchor-spacer"></span>
+        <button type="button" class="anchor" data-anchor="top-right"></button>
+        <span class="anchor-spacer"></span>
+        <button type="button" class="anchor active" data-anchor="center"></button>
+        <span class="anchor-spacer"></span>
+        <button type="button" class="anchor" data-anchor="bottom-left"></button>
+        <span class="anchor-spacer"></span>
+        <button type="button" class="anchor" data-anchor="bottom-right"></button>
+      </div>
+    </section>
+
+    <div class="send-wrap">
+      <button id="send-btn" class="send-btn">DROP IT 💥</button>
+      <div id="status" class="status"></div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

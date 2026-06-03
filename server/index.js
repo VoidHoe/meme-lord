@@ -5,6 +5,8 @@ const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
 const { createRouter } = require('./router');
+const { resolveMedia } = require('./resolveMedia');
+const { checkSendAuth } = require('./sendAuth');
 
 const app = express();
 app.use(express.json());
@@ -14,6 +16,10 @@ const io = new Server(server, { cors: { origin: '*' } });
 // Servir les fichiers audio et media proxiés
 app.use('/audio', express.static(path.join(__dirname, 'audio_cache')));
 app.use('/media', express.static(path.join(__dirname, 'media_cache')));
+
+// Page mobile "Quick Drop" (envoyer depuis le téléphone)
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/send', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'send', 'index.html')));
 
 // Purge cache files older than 1 hour on startup (survives server crashes)
 function purgeStaleCache(dir) {
@@ -83,14 +89,29 @@ app.post('/api/upload-media', express.raw({ type: '*/*', limit: '50mb' }), (req,
   }
 });
 
-// API drop directe (depuis l'overlay app, sans passer par Discord)
-app.post('/api/drop', (req, res) => {
-  const { media, audio, effects, target, caption, positionX, positionY,
+// Vérifie le mot de passe de la page mobile /send (soft lock).
+app.post('/api/send-auth', (req, res) => {
+  const { password } = req.body || {};
+  res.json(checkSendAuth(password, process.env.SEND_PASSWORD));
+});
+
+// API drop directe (depuis l'overlay app OU la page mobile, sans passer par Discord)
+app.post('/api/drop', async (req, res) => {
+  const { media, mediaUrl, audio, effects, target, caption, positionX, positionY,
           loop, loopDuration, loopTimes, trimStart, trimEnd, size } = req.body;
-  if (!media && !audio) return res.status(400).json({ error: 'media ou audio requis' });
+
+  // La page mobile envoie une URL brute (mediaUrl) ; on la résout côté serveur.
+  // L'app desktop envoie déjà un objet `media` résolu → on n'y touche pas.
+  let resolved = media || null;
+  if (!resolved && mediaUrl) {
+    try { resolved = await resolveMedia(mediaUrl); }
+    catch (e) { console.error('[api] resolveMedia échec:', e.message); }
+  }
+
+  if (!resolved && !audio) return res.status(400).json({ error: 'media ou audio requis' });
 
   router.dispatch({
-    media:        media     || null,
+    media:        resolved  || null,
     audio:        audio     || null,
     effects:      effects   || [],
     target:       target    || null,
