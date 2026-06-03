@@ -18,7 +18,6 @@ let previewStop    = null;
 let selectedAnchor = 'center';
 let selectedSize   = 'm';
 let pendingSaveFav = null;
-let tryhardMode    = false;
 
 // Anchor → overlay positionX/positionY mapping
 const ANCHOR_MAP = {
@@ -29,12 +28,12 @@ const ANCHOR_MAP = {
   'bottom-right': { positionX: 85, positionY: 85 },
 };
 
-// Tryhard mode forces medium size, top-right corner on every drop.
+// Resolve the drop's size + position from the sender's current selections.
+// (Tryhard mode is a per-receiver setting now, applied in the overlay — the
+// sender always sends the size/position the user picked here.)
 function effectiveDrop() {
-  const anchor = tryhardMode ? 'top-right' : selectedAnchor;
-  const size   = tryhardMode ? 'm' : selectedSize;
-  const pos    = ANCHOR_MAP[anchor] || ANCHOR_MAP['center'];
-  return { size, positionX: pos.positionX, positionY: pos.positionY };
+  const pos = ANCHOR_MAP[selectedAnchor] || ANCHOR_MAP['center'];
+  return { size: selectedSize, positionX: pos.positionX, positionY: pos.positionY };
 }
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
@@ -165,7 +164,7 @@ async function resendHistoryEntry(entry, btn) {
   btn.disabled = true;
   btn.textContent = '…';
   try {
-    const drop = tryhardMode ? effectiveDrop() : {
+    const drop = {
       size:      entry.size      || 'm',
       positionX: entry.positionX ?? null,
       positionY: entry.positionY ?? null,
@@ -202,7 +201,6 @@ document.getElementById('history-clear-btn').addEventListener('click', async () 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.sender.getSettings().then(s => {
   micDeviceId = s.micDeviceId || '';
-  tryhardMode = !!s.tryhardMode;
   const savedAnchor = s.anchorPosition || 'center';
   setAnchor(savedAnchor, false);
   const savedSize = s.dropSize || 'm';

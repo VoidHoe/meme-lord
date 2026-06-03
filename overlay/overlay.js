@@ -64,6 +64,14 @@ async function processQueue() {
   const event = queue.shift();
   updateBadge();
 
+  // Tryhard mode (per-receiver): force incoming drops into a small top-right
+  // corner so they don't block gameplay (e.g. peeking in an FPS). Each person
+  // toggles this for their own screen — it doesn't change what others see.
+  const tryhard  = !!settings.tryhardMode;
+  const dropSize = tryhard ? 's' : event.size;
+  const dropX    = tryhard ? 85  : event.positionX;
+  const dropY    = tryhard ? 15  : event.positionY;
+
   // Reset container
   container.innerHTML      = '';
   container.style.opacity  = '1';
@@ -80,7 +88,7 @@ async function processQueue() {
     mediaEl = buildMediaElement(event.media, event.loop);
     if (mediaEl) {
       if (hasSpin) mediaEl.classList.add('fx-spin');
-      applySize(mediaEl, event.size);
+      applySize(mediaEl, dropSize);
       container.appendChild(mediaEl);
       await waitForMedia(mediaEl);
     }
@@ -93,7 +101,7 @@ async function processQueue() {
     container.appendChild(cap);
   }
 
-  applyPosition(event.positionX, event.positionY);
+  applyPosition(dropX, dropY);
 
   // Fade in
   if (hasFade) {
