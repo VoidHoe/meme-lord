@@ -21,4 +21,9 @@ contextBridge.exposeInMainWorld('sender', {
   libraryDelete:  (id)               => ipcRenderer.invoke('library-delete', id),
   libraryUpload:  (id)               => ipcRenderer.invoke('library-upload', id),
   close:          ()                 => ipcRenderer.send('close-sender'),
+  minimize:       ()                 => ipcRenderer.send('minimize-sender'),
+  openSnipTool:   ()                 => ipcRenderer.invoke('open-snip-tool'),
+  checkForUpdates:()                 => ipcRenderer.invoke('check-for-updates'),
+  onUpdateStatus: (cb)               => ipcRenderer.on('update-status', (_e, msg) => cb(msg)),
+  onShowTab:      (cb)               => ipcRenderer.on('show-tab',      (_e, tab) => cb(tab)),
 });

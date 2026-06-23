@@ -1,11 +1,5 @@
 // ── State ─────────────────────────────────────────────────────────────────────
-let micDeviceId    = '';
 const activeEffects = new Set();
-let mediaRecorder  = null;
-let recordedChunks = [];
-let audioBlob      = null;
-let recordingTimer = null;
-let recordingSecs  = 0;
 let mediaUrl       = null;
 let mediaIsVideo   = false;
 let trimScrubbable = false;   // true only for real playable videos (not embeds)
@@ -28,16 +22,16 @@ const ANCHOR_MAP = {
   'bottom-right': { positionX: 85, positionY: 85 },
 };
 
-// Resolve the drop's size + position from the sender's current selections.
-// (Tryhard mode is a per-receiver setting now, applied in the overlay — the
-// sender always sends the size/position the user picked here.)
 function effectiveDrop() {
   const pos = ANCHOR_MAP[selectedAnchor] || ANCHOR_MAP['center'];
   return { size: selectedSize, positionX: pos.positionX, positionY: pos.positionY };
 }
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
+const composePanel = document.getElementById('compose-panel');
 const dropZone    = document.getElementById('drop-zone');
+const stageMedia  = document.getElementById('stage-media');
+const stagePrompt = document.getElementById('stage-prompt');
 const urlText     = document.getElementById('url-text');
 const clearUrlBtn = document.getElementById('clear-url');
 const urlPaste    = document.getElementById('url-paste');
@@ -46,10 +40,7 @@ const refreshBtn  = document.getElementById('refresh-btn');
 const capInput    = document.getElementById('caption');
 const sendBtn     = document.getElementById('send-btn');
 const statusEl    = document.getElementById('status');
-const micBtn      = document.getElementById('mic-btn');
-const voiceLabel  = document.getElementById('voice-label');
-const dropView    = document.getElementById('drop-view');
-const gifView     = document.getElementById('gif-view');
+const advanced    = document.getElementById('advanced');
 const trimRow      = document.getElementById('trim-row');
 const trimEmpty    = document.getElementById('trim-empty');
 const trimEditor   = document.getElementById('trim-editor');
@@ -62,51 +53,47 @@ const trimPlayhead = document.getElementById('trim-playhead');
 const trimReadout  = document.getElementById('trim-readout');
 const trimRepVal   = document.getElementById('trim-rep-val');
 const trimPreviewBtn = document.getElementById('trim-preview-btn');
-const historyView  = document.getElementById('history-view');
 const historyList  = document.getElementById('history-list');
 const historyEmpty = document.getElementById('history-empty');
-const libraryView  = document.getElementById('library-view');
 const libraryGrid  = document.getElementById('library-grid');
 const libraryEmpty = document.getElementById('library-empty');
 const saveClipBtn  = document.getElementById('save-clip-btn');
 
-// ── GIF slide panel ───────────────────────────────────────────────────────────
-document.getElementById('open-gif-btn').addEventListener('click', openGifView);
-document.getElementById('gif-back-btn').addEventListener('click', closeGifView);
+// ── Tabs ────────────────────────────────────────────────────────────────────
+const tabBtns = [...document.querySelectorAll('.tab')];
+const PANELS = { compose: 'compose-panel', library: 'library-panel', gif: 'gif-panel', history: 'history-panel', settings: 'settings-panel' };
 
-function openGifView() {
-  dropView.classList.add('slide-out');
-  gifView.classList.add('slide-in');
-  setTimeout(() => document.getElementById('gif-search-input').focus(), 300);
+function isPanelActive(name) {
+  return document.getElementById(PANELS[name]).classList.contains('active');
 }
 
-function closeGifView() {
-  dropView.classList.remove('slide-out');
-  gifView.classList.remove('slide-in');
+function showTab(name) {
+  if (!PANELS[name]) return;
+  tabBtns.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  Object.entries(PANELS).forEach(([k, id]) => document.getElementById(id).classList.toggle('active', k === name));
+  if (name === 'library')  { buildSituationFilter(); renderLibrary(); }
+  if (name === 'history')  loadHistory();
+  if (name === 'gif')      setTimeout(() => gifSearchInput.focus(), 60);
+  if (name === 'settings') loadSettingsForm();
 }
+tabBtns.forEach(t => t.addEventListener('click', () => showTab(t.dataset.tab)));
+if (window.sender.onShowTab) window.sender.onShowTab(tab => showTab(tab));
 
-// ── History slide panel ───────────────────────────────────────────────────────
-document.getElementById('open-history-btn').addEventListener('click', openHistoryView);
-document.getElementById('history-back-btn').addEventListener('click', closeHistoryView);
+// ── Window controls ───────────────────────────────────────────────────────────
+document.getElementById('close-btn').addEventListener('click', () => window.sender.close());
+document.getElementById('min-btn').addEventListener('click', () => window.sender.minimize());
 
-function openHistoryView() {
-  dropView.classList.add('slide-out');
-  historyView.classList.add('slide-in');
-  loadHistory();
-}
+// ── Snip button (opens Windows region snip → user pastes the result) ───────────
+document.getElementById('snip-btn').addEventListener('click', async () => {
+  setStatus('Opening Snip — draw a box, then Ctrl+V here ↩');
+  try { await window.sender.openSnipTool(); } catch {}
+});
 
-function closeHistoryView() {
-  dropView.classList.remove('slide-out');
-  historyView.classList.remove('slide-in');
-}
-
+// ── History ───────────────────────────────────────────────────────────────────
 async function loadHistory() {
   historyList.innerHTML = '';
   const entries = await window.sender.getHistory();
-  if (!entries.length) {
-    historyEmpty.style.display = 'block';
-    return;
-  }
+  if (!entries.length) { historyEmpty.style.display = 'block'; return; }
   historyEmpty.style.display = 'none';
   entries.forEach(entry => historyList.appendChild(renderHistoryEntry(entry)));
 }
@@ -200,11 +187,8 @@ document.getElementById('history-clear-btn').addEventListener('click', async () 
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.sender.getSettings().then(s => {
-  micDeviceId = s.micDeviceId || '';
-  const savedAnchor = s.anchorPosition || 'center';
-  setAnchor(savedAnchor, false);
-  const savedSize = s.dropSize || 'm';
-  setSize(savedSize, false);
+  setAnchor(s.anchorPosition || 'center', false);
+  setSize(s.dropSize || 'm', false);
 });
 loadUsers();
 
@@ -228,12 +212,9 @@ refreshBtn.addEventListener('click', loadUsers);
 document.querySelectorAll('.anchor-btn').forEach(btn => {
   btn.addEventListener('click', () => setAnchor(btn.dataset.anchor, true));
 });
-
 function setAnchor(anchor, persist) {
   selectedAnchor = anchor;
-  document.querySelectorAll('.anchor-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.anchor === anchor);
-  });
+  document.querySelectorAll('.anchor-btn').forEach(b => b.classList.toggle('active', b.dataset.anchor === anchor));
   if (persist) {
     const pos = ANCHOR_MAP[anchor] || ANCHOR_MAP['center'];
     window.sender.saveSettings({ anchorPosition: anchor, positionX: pos.positionX, positionY: pos.positionY });
@@ -244,15 +225,10 @@ function setAnchor(anchor, persist) {
 document.querySelectorAll('.size-chip').forEach(btn => {
   btn.addEventListener('click', () => setSize(btn.dataset.size, true));
 });
-
 function setSize(size, persist) {
   selectedSize = size;
-  document.querySelectorAll('.size-chip').forEach(b => {
-    b.classList.toggle('active', b.dataset.size === size);
-  });
-  if (persist) {
-    window.sender.saveSettings({ dropSize: size });
-  }
+  document.querySelectorAll('.size-chip').forEach(b => b.classList.toggle('active', b.dataset.size === size));
+  if (persist) window.sender.saveSettings({ dropSize: size });
 }
 
 // ── Trim timeline ───────────────────────────────────────────────────────────
@@ -261,7 +237,6 @@ function fmtClock(s) {
   return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 }
 
-// Enable the trim card for a real playable video; show a hint otherwise.
 function setTrimEnabled(scrubbable, url) {
   stopPreview();
   trimScrubbable = false;
@@ -343,7 +318,6 @@ function endDrag() {
 trimHStart.addEventListener('pointerdown', (e) => startDrag('start', e));
 trimHEnd.addEventListener('pointerdown', (e) => startDrag('end', e));
 
-// ── Preview the selected segment ──
 trimPreviewBtn.addEventListener('click', previewSegment);
 function previewSegment() {
   if (!trimScrubbable || !videoDuration) return;
@@ -367,7 +341,6 @@ function stopPreview() {
   trimPreviewBtn.textContent = '▶ Preview';
 }
 
-// ── Repeat (× N) ──
 function setRepeat(n) {
   trimRepeat = Math.min(10, Math.max(1, n));
   trimRepVal.textContent = trimRepeat + '×';
@@ -375,12 +348,12 @@ function setRepeat(n) {
 document.getElementById('trim-rep-dn').addEventListener('click', () => setRepeat(trimRepeat - 1));
 document.getElementById('trim-rep-up').addEventListener('click', () => setRepeat(trimRepeat + 1));
 
-// ── Drag and drop ─────────────────────────────────────────────────────────────
+// ── Drag and drop (onto the Compose panel) ──────────────────────────────────────
 let dragCounter = 0;
-dropView.addEventListener('dragenter', (e) => { e.preventDefault(); dragCounter++; dropZone.classList.add('drag-over'); urlText.textContent = 'Release to upload…'; });
-dropView.addEventListener('dragleave', () => { dragCounter--; if (dragCounter <= 0) { dragCounter = 0; dropZone.classList.remove('drag-over'); if (!mediaUrl) urlText.textContent = 'Drop a file here, or paste a URL below'; } });
-dropView.addEventListener('dragover', (e) => e.preventDefault());
-dropView.addEventListener('drop', async (e) => {
+composePanel.addEventListener('dragenter', (e) => { e.preventDefault(); dragCounter++; dropZone.classList.add('drag-over'); if (!mediaUrl) urlText.textContent = 'Release to upload…'; });
+composePanel.addEventListener('dragleave', () => { dragCounter--; if (dragCounter <= 0) { dragCounter = 0; dropZone.classList.remove('drag-over'); if (!mediaUrl) urlText.textContent = 'Paste or drop your meme'; } });
+composePanel.addEventListener('dragover', (e) => e.preventDefault());
+composePanel.addEventListener('drop', async (e) => {
   e.preventDefault(); dragCounter = 0; dropZone.classList.remove('drag-over');
   const file = [...(e.dataTransfer?.files || [])][0];
   if (!file) return;
@@ -388,14 +361,26 @@ dropView.addEventListener('drop', async (e) => {
   await uploadFile(file);
 });
 
-async function uploadFile(file) {
+// ── Paste a screenshot / image straight into Compose ────────────────────────────
+document.addEventListener('paste', async (e) => {
+  const items = [...(e.clipboardData?.items || [])];
+  const imgItem = items.find(it => it.type.startsWith('image/'));
+  if (!imgItem) return;   // not an image — let text paste (caption/link) proceed
+  e.preventDefault();
+  const file = imgItem.getAsFile();
+  if (!file) return;
+  showTab('compose');
+  await uploadFile(file, 'Pasted image');
+});
+
+async function uploadFile(file, label) {
   setStatus('Uploading…');
   try {
     const ab = await file.arrayBuffer();
-    const r  = await window.sender.uploadMedia(ab, file.type);
+    const r  = await window.sender.uploadMedia(ab, file.type || 'image/png');
     if (r.error) throw new Error(r.error);
-    const isVid = file.type.startsWith('video/');
-    setMediaUrl(r.url, file.name, isVid);
+    const isVid = (file.type || '').startsWith('video/');
+    setMediaUrl(r.url, label || file.name || 'Pasted image', isVid);
     setStatus('✓ Ready', 'ok');
     setTimeout(() => setStatus(''), 1200);
   } catch(err) {
@@ -408,25 +393,48 @@ function isEmbedUrl(u) {
   return /tiktok\.com|(?:twitter\.com|x\.com)|youtube\.com|youtu\.be/.test(u || '');
 }
 
+// Render a preview of the loaded media inside the stage.
+function renderStagePreview(url, label, isVideo) {
+  stagePrompt.style.display = 'none';
+  stageMedia.style.display = 'flex';
+  stageMedia.innerHTML = '';
+  const fallback = (ic) => { stageMedia.innerHTML = `<div style="text-align:center"><div class="embed-ic">${ic}</div><span class="embed-label">${label || ''}</span></div>`; };
+  if (isEmbedUrl(url)) {
+    const ic = /tiktok\.com/.test(url) ? '🎵' : /(?:twitter\.com|x\.com)/.test(url) ? '🐦' : '▶️';
+    fallback(ic);
+  } else if (isVideo) {
+    const v = document.createElement('video');
+    v.src = url; v.muted = true; v.loop = true; v.autoplay = true; v.playsInline = true;
+    v.onerror = () => fallback('🎬');
+    stageMedia.appendChild(v);
+    v.play().catch(() => {});
+  } else {
+    const img = document.createElement('img');
+    img.src = url; img.onerror = () => fallback('🖼️');
+    stageMedia.appendChild(img);
+  }
+}
+
 // opts: { scrubbable, previewUrl }
-//   url       — what actually gets sent (original link for TikTok/Twitter, so the
-//               server re-resolves a fresh CDN url at drop time)
-//   previewUrl — the direct, seekable mp4 to load into the trim timeline
 function setMediaUrl(url, label, isVideo = false, opts = {}) {
   mediaUrl = url; mediaIsVideo = isVideo; urlPaste.value = '';
-  dropZone.classList.add('has-url');
+  dropZone.classList.add('has-media');
   urlText.textContent = label || url;
   clearUrlBtn.style.display = 'block';
   saveClipBtn.style.display = isVideo ? 'block' : 'none';
+  renderStagePreview(url, label, isVideo);
   const scrubbable = opts.scrubbable ?? (isVideo && !isEmbedUrl(url));
   const previewUrl = scrubbable ? (opts.previewUrl || url) : (isVideo ? url : null);
   setTrimEnabled(scrubbable, previewUrl);
+  if (scrubbable) advanced.open = true;
 }
 
 function clearMedia() {
   mediaUrl = null; mediaIsVideo = false;
-  dropZone.classList.remove('has-url');
-  urlText.textContent = 'Drop a file here, or paste a URL below';
+  dropZone.classList.remove('has-media');
+  stageMedia.style.display = 'none'; stageMedia.innerHTML = '';
+  stagePrompt.style.display = '';
+  urlText.textContent = 'Paste or drop your meme';
   clearUrlBtn.style.display = 'none';
   saveClipBtn.style.display = 'none';
   setTrimEnabled(false, null);
@@ -439,9 +447,6 @@ async function applyPastedUrl() {
   const v = urlPaste.value.trim();
   if (!v.startsWith('http')) return;
 
-  // TikTok / Twitter resolve to a direct, seekable mp4 → trimmable via playback.
-  // We keep the ORIGINAL link as mediaUrl so the server re-resolves a fresh CDN
-  // url at drop time, and use the resolved mp4 only for the scrub preview.
   const isTikTok  = /tiktok\.com\/@[\w.]+\/video\/\d+/.test(v);
   const isTwitter = /(?:twitter\.com|x\.com)\/\w+\/status\/\d+/.test(v);
   if (isTikTok || isTwitter) {
@@ -465,7 +470,6 @@ async function applyPastedUrl() {
     return;
   }
 
-  // YouTube stays a full-play embed for now (no direct url to scrub).
   if (/(?:youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/.test(v)) {
     setMediaUrl(v, '▶️ YouTube video', true, { scrubbable: false }); return;
   }
@@ -484,46 +488,16 @@ document.querySelectorAll('.chip').forEach(chip => {
   });
 });
 
-// ── Close / Escape ────────────────────────────────────────────────────────────
-document.getElementById('close-btn').addEventListener('click', () => window.sender.close());
+// ── Escape ──────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (document.getElementById('lib-modal').classList.contains('open')) { closeLibModal(); }
-    else if (gifView.classList.contains('slide-in')) closeGifView();
-    else if (historyView.classList.contains('slide-in')) closeHistoryView();
-    else if (libraryView.classList.contains('slide-in')) closeLibraryView();
+    else if (document.getElementById('fav-modal').classList.contains('open')) { document.getElementById('fav-modal').classList.remove('open'); }
+    else if (!isPanelActive('compose')) { showTab('compose'); }
     else window.sender.close();
   }
 });
 capInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
-
-// ── Microphone ────────────────────────────────────────────────────────────────
-micBtn.addEventListener('click', toggleRecording);
-async function toggleRecording() {
-  if (mediaRecorder && mediaRecorder.state === 'recording') { mediaRecorder.stop(); return; }
-  try {
-    const audioConstraints = micDeviceId ? { deviceId: { exact: micDeviceId } } : true;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-    recordedChunks = []; audioBlob = null;
-    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-    mediaRecorder.onstop = () => {
-      stream.getTracks().forEach(t => t.stop());
-      audioBlob = new Blob(recordedChunks, { type: 'audio/webm' });
-      stopTimer();
-      micBtn.className = 'has-audio';
-      micBtn.innerHTML = `🎤 ✓ ${formatTime(recordingSecs)}`;
-      voiceLabel.textContent = `${formatTime(recordingSecs)} recorded — click to re-record`;
-      voiceLabel.className = 'active';
-    };
-    mediaRecorder.start(); startTimer();
-    micBtn.className = 'recording'; micBtn.innerHTML = `⏹ ${formatTime(recordingSecs)}`;
-    voiceLabel.textContent = 'Recording… click to stop'; voiceLabel.className = '';
-  } catch(err) { setStatus('Mic access denied', 'err'); }
-}
-function startTimer() { recordingSecs = 0; recordingTimer = setInterval(() => { recordingSecs++; micBtn.innerHTML = `⏹ ${formatTime(recordingSecs)}`; }, 1000); }
-function stopTimer()  { clearInterval(recordingTimer); recordingTimer = null; }
-function formatTime(s) { return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; }
 
 // ── Send ──────────────────────────────────────────────────────────────────────
 sendBtn.addEventListener('click', send);
@@ -535,7 +509,6 @@ async function send() {
   const caption      = capInput.value.trim() || null;
   const effects      = [...activeEffects];
 
-  // Trim: send a segment when the user moved a handle OR wants it repeated.
   const wantRepeat  = trimScrubbable && trimRepeat > 1;
   const useTrim     = trimScrubbable && videoDuration > 0 &&
                       (trimStart > 0.05 || trimEnd < videoDuration - 0.05 || wantRepeat);
@@ -543,21 +516,14 @@ async function send() {
   const trimEndVal   = useTrim ? +Math.min(videoDuration, trimEnd).toFixed(2) : null;
   const loopTimesVal = useTrim ? trimRepeat : null;
 
-  if (!url && !audioBlob) { setStatus('Add a URL, drop a file, or record audio', 'err'); return; }
+  if (!url) { setStatus('Add a URL or drop a file', 'err'); return; }
 
   sendBtn.disabled = true;
   try {
-    let audioUrl = null;
-    if (audioBlob) {
-      setStatus('Uploading audio…');
-      const r = await window.sender.uploadAudio(await audioBlob.arrayBuffer());
-      if (r.error) throw new Error(r.error);
-      audioUrl = r.url;
-    }
     setStatus('Sending…');
     const drop = effectiveDrop();
     const result = await window.sender.sendDrop({
-      url, target, caption, effects, audioUrl,
+      url, target, caption, effects, audioUrl: null,
       loop: false,
       loopDuration: null,
       loopTimes: loopTimesVal,
@@ -648,7 +614,7 @@ async function searchGifs(query) {
     div.appendChild(img);
     div.addEventListener('click', () => {
       setMediaUrl(mp4Url || preview, item.title || 'GIF', !!mp4Url);
-      closeGifView();
+      showTab('compose');
       setStatus('✓ GIF selected', 'ok');
       setTimeout(() => setStatus(''), 1200);
     });
@@ -666,12 +632,10 @@ document.getElementById('fav-save-ok').addEventListener('click', async () => {
   setStatus('⭐ Saved!', 'ok');
   setTimeout(() => setStatus(''), 1500);
 });
-
 document.getElementById('fav-save-cancel').addEventListener('click', () => {
   document.getElementById('fav-modal').classList.remove('open');
   pendingSaveFav = null;
 });
-
 document.getElementById('fav-name-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter')  document.getElementById('fav-save-ok').click();
   if (e.key === 'Escape') document.getElementById('fav-save-cancel').click();
@@ -685,9 +649,6 @@ function resetForm() {
   targetSel.value = '';
   activeEffects.clear();
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-  audioBlob = null; recordedChunks = []; stopTimer();
-  micBtn.className = ''; micBtn.innerHTML = '🎤 Record';
-  voiceLabel.textContent = 'No recording'; voiceLabel.className = '';
 }
 
 // ── Clip library ──────────────────────────────────────────────────────────────
@@ -706,20 +667,6 @@ let activeSituation = 'all';
 let pickedSituation = 'w';
 let libraryCache = [];
 
-document.getElementById('open-library-btn').addEventListener('click', openLibraryView);
-document.getElementById('library-back-btn').addEventListener('click', closeLibraryView);
-
-async function openLibraryView() {
-  buildSituationFilter();
-  dropView.classList.add('slide-out');
-  libraryView.classList.add('slide-in');
-  await renderLibrary();
-}
-function closeLibraryView() {
-  dropView.classList.remove('slide-out');
-  libraryView.classList.remove('slide-in');
-}
-
 function buildSituationFilter() {
   const wrap = document.getElementById('situation-filter');
   wrap.innerHTML = '';
@@ -728,11 +675,7 @@ function buildSituationFilter() {
     const chip = document.createElement('div');
     chip.className = 'sit-chip' + (id === activeSituation ? ' active' : '');
     chip.textContent = id === 'all' ? '✨ All' : SIT_LABEL[id];
-    chip.addEventListener('click', () => {
-      activeSituation = id;
-      buildSituationFilter();
-      renderLibrary();
-    });
+    chip.addEventListener('click', () => { activeSituation = id; buildSituationFilter(); renderLibrary(); });
     wrap.appendChild(chip);
   });
 }
@@ -745,7 +688,7 @@ async function renderLibrary() {
     libraryEmpty.style.display = 'block';
     libraryEmpty.textContent = libraryCache.length
       ? 'No clips in this situation yet'
-      : 'No clips saved yet — paste a video and hit ★ Save';
+      : 'No clips saved yet — paste a video in Compose and hit ★ Save';
     return;
   }
   libraryEmpty.style.display = 'none';
@@ -777,8 +720,6 @@ async function renderLibrary() {
   });
 }
 
-// Clicking a library clip loads its media into the main drop view so you can
-// add a caption, pick size/position, etc. before sending — it no longer sends instantly.
 async function loadLibraryClip(entry, tile) {
   const busy = document.createElement('div');
   busy.className = 'clip-sending'; busy.textContent = 'Loading…';
@@ -788,7 +729,7 @@ async function loadLibraryClip(entry, tile) {
     if (up.error || !up.url) throw new Error(up.error || 'upload failed');
     setMediaUrl(up.url, entry.name, true);
     busy.remove();
-    closeLibraryView();
+    showTab('compose');
     capInput.focus();
     setStatus('✓ Loaded — add a caption & send', 'ok');
     setTimeout(() => setStatus(''), 2000);
@@ -837,10 +778,85 @@ document.getElementById('lib-save-ok').addEventListener('click', async () => {
   closeLibModal();
   setStatus('📚 Saved to library!', 'ok');
   setTimeout(() => setStatus(''), 1500);
-  if (libraryView.classList.contains('slide-in')) renderLibrary();
+  if (isPanelActive('library')) renderLibrary();
 });
-
 document.getElementById('lib-save-cancel').addEventListener('click', closeLibModal);
 document.getElementById('lib-name-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') document.getElementById('lib-save-ok').click();
 });
+
+// ── Settings tab ──────────────────────────────────────────────────────────────
+const SET_RANGES = [['duration', 'durationVal'], ['volumeSfx', 'volumeSfxVal'], ['volumeVoice', 'volumeVoiceVal']];
+SET_RANGES.forEach(([key, disp]) => {
+  const input = document.getElementById(key);
+  const out   = document.getElementById(disp);
+  if (input && out) input.addEventListener('input', () => { out.textContent = input.value; });
+});
+function updateRangeDisplays() {
+  SET_RANGES.forEach(([key, disp]) => {
+    const input = document.getElementById(key);
+    const out   = document.getElementById(disp);
+    if (input && out) out.textContent = input.value;
+  });
+}
+
+function populateTtsVoices(selected) {
+  const sel = document.getElementById('ttsVoice');
+  let voices = [];
+  try { voices = window.speechSynthesis.getVoices().filter(v => /^(fr|en)/i.test(v.lang)); } catch {}
+  sel.innerHTML = '<option value="">🔇 Off</option>';
+  voices.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v.name; o.textContent = `${v.name} (${v.lang})`;
+    sel.appendChild(o);
+  });
+  if (selected) sel.value = selected;
+  const hint = document.getElementById('ttsHint');
+  if (hint) hint.textContent = voices.length
+    ? 'Reads captions aloud using your system voices. No API, no cost.'
+    : 'No system voices found — captions will be silent.';
+}
+try { window.speechSynthesis.onvoiceschanged = () => { if (isPanelActive('settings')) populateTtsVoices(document.getElementById('ttsVoice').value); }; } catch {}
+
+async function loadSettingsForm() {
+  const s = await window.sender.getSettings();
+  document.getElementById('serverUrl').value = s.serverUrl || '';
+  document.getElementById('discordUsername').value = s.discordUsername || '';
+  document.getElementById('duration').value = Math.round((s.duration || 5000) / 1000);
+  document.getElementById('volumeSfx').value = s.volumeSfx ?? 80;
+  document.getElementById('volumeVoice').value = s.volumeVoice ?? 100;
+  document.getElementById('giphyApiKey').value = s.giphyApiKey || '';
+  document.getElementById('tryhardMode').checked = !!s.tryhardMode;
+  updateRangeDisplays();
+  populateTtsVoices(s.ttsVoice || '');
+}
+
+document.getElementById('settings-save-btn').addEventListener('click', async () => {
+  const ns = {
+    serverUrl:       document.getElementById('serverUrl').value,
+    discordUsername: document.getElementById('discordUsername').value,
+    duration:        Number(document.getElementById('duration').value) * 1000,
+    volumeSfx:       Number(document.getElementById('volumeSfx').value),
+    volumeVoice:     Number(document.getElementById('volumeVoice').value),
+    giphyApiKey:     document.getElementById('giphyApiKey').value,
+    tryhardMode:     document.getElementById('tryhardMode').checked,
+    ttsVoice:        document.getElementById('ttsVoice').value,
+  };
+  await window.sender.saveSettings(ns);
+  const st = document.getElementById('settings-status');
+  st.textContent = '✅ Saved!';
+  setTimeout(() => { st.textContent = ''; }, 2000);
+});
+
+document.getElementById('settings-update-btn').addEventListener('click', async () => {
+  const st = document.getElementById('settings-update-status');
+  st.textContent = '⏳ Checking…';
+  const result = await window.sender.checkForUpdates();
+  if (result.status === 'dev') st.textContent = '⚠️ Only works in the installed version (not dev mode).';
+});
+if (window.sender.onUpdateStatus) {
+  window.sender.onUpdateStatus((msg) => {
+    const st = document.getElementById('settings-update-status');
+    if (st) st.textContent = msg;
+  });
+}

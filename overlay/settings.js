@@ -1,4 +1,5 @@
-const fields      = ['serverUrl', 'discordUsername', 'duration', 'volumeSfx', 'volumeVoice', 'giphyApiKey', 'micDeviceId'];
+const ELEVENLABS_KEY = 'sk_699bb98a4c9010efa533de7a75548061a55ce29ae16ecc4c';
+const fields      = ['serverUrl', 'discordUsername', 'duration', 'volumeSfx', 'volumeVoice', 'giphyApiKey', 'elevenLabsVoiceId'];
 const rangeFields = ['duration', 'volumeSfx', 'volumeVoice'];
 
 window.memedrop.getSettings().then(settings => {
@@ -12,6 +13,7 @@ window.memedrop.getSettings().then(settings => {
   const thEl = document.getElementById('tryhardMode');
   if (thEl) thEl.checked = !!settings.tryhardMode;
   updateRangeDisplays();
+  loadElevenLabsVoices(settings.elevenLabsVoiceId || '');
 });
 
 rangeFields.forEach(key => {
@@ -28,24 +30,6 @@ function updateRangeDisplays() {
   });
 }
 
-async function populateMicDevices() {
-  const sel = document.getElementById('micDeviceId');
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach(t => t.stop());
-  } catch(e) {}
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const saved   = sel.value;
-  sel.innerHTML = '<option value="">Microphone par défaut</option>';
-  devices.filter(d => d.kind === 'audioinput').forEach(d => {
-    const opt = document.createElement('option');
-    opt.value       = d.deviceId;
-    opt.textContent = d.label || `Microphone (${d.deviceId.slice(0, 8)}…)`;
-    sel.appendChild(opt);
-  });
-  if (saved) sel.value = saved;
-}
-populateMicDevices();
 
 const updateStatus = document.getElementById('updateStatus');
 
@@ -53,6 +37,27 @@ const updateStatus = document.getElementById('updateStatus');
 window.memedrop.onUpdateStatus((msg) => {
   updateStatus.textContent = msg;
 });
+
+async function loadElevenLabsVoices(savedId) {
+  const hint = document.getElementById('elVoiceHint');
+  const sel  = document.getElementById('elevenLabsVoiceId');
+  try {
+    const res  = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': ELEVENLABS_KEY } });
+    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+    const data = await res.json();
+    sel.innerHTML = '<option value="">— choisir une voix —</option>';
+    (data.voices || []).forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.voice_id; opt.textContent = v.name;
+      sel.appendChild(opt);
+    });
+    if (savedId) sel.value = savedId;
+    hint.textContent = `${data.voices?.length || 0} voix disponibles`; hint.style.color = '#555';
+  } catch (e) {
+    hint.textContent = '❌ ' + e.message; hint.style.color = '#f87171';
+    sel.innerHTML = '<option value="">— erreur de chargement —</option>';
+  }
+}
 
 document.getElementById('updateBtn').addEventListener('click', async () => {
   updateStatus.textContent = '⏳ Checking…';

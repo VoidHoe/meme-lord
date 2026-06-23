@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut, session, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut, session, protocol, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -22,6 +22,7 @@ const store = new Store({
     dropSize: 'm',
     history: [],
     library: [],
+    ttsVoice: '',
   },
 });
 
@@ -114,11 +115,11 @@ function createSenderWindow() {
   }
 
   senderWindow = new BrowserWindow({
-    width: 460,
-    height: 560,
+    width: 760,
+    height: 580,
     resizable: true,
-    minWidth: 420,
-    minHeight: 500,
+    minWidth: 640,
+    minHeight: 520,
     frame: false,
     alwaysOnTop: false,
     title: 'MemeDrop',
@@ -130,6 +131,18 @@ function createSenderWindow() {
 
   senderWindow.loadFile(path.join(__dirname, 'sender.html'));
   senderWindow.on('closed', () => { senderWindow = null; });
+}
+
+// Open (or focus) the sender on a specific tab — Settings is now a tab here.
+function openSenderTab(tab) {
+  createSenderWindow();
+  if (!senderWindow) return;
+  const deliver = () => senderWindow.webContents.send('show-tab', tab);
+  if (senderWindow.webContents.isLoading()) {
+    senderWindow.webContents.once('did-finish-load', deliver);
+  } else {
+    deliver();
+  }
 }
 
 // ── Socket ────────────────────────────────────────────────────────────────────
@@ -195,7 +208,8 @@ ipcMain.handle('save-settings', (_event, newSettings) => {
   return store.store;
 });
 
-ipcMain.on('open-settings', createSettingsWindow);
+// Settings lives in the sender now (as a tab) — route old callers there.
+ipcMain.on('open-settings', () => openSenderTab('settings'));
 
 // ── Sender — drop direct sans Discord ────────────────────────────────────────
 
@@ -332,6 +346,17 @@ ipcMain.handle('get-users', async () => {
 
 ipcMain.on('close-sender', () => {
   if (senderWindow && !senderWindow.isDestroyed()) senderWindow.close();
+});
+
+ipcMain.on('minimize-sender', () => {
+  if (senderWindow && !senderWindow.isDestroyed()) senderWindow.minimize();
+});
+
+// Launch the Windows region snip overlay; the user pastes the result back into
+// Compose (Ctrl+V). Phase 2 will capture+crop in-app via a global hotkey.
+ipcMain.handle('open-snip-tool', async () => {
+  try { await shell.openExternal('ms-screenclip:'); return { ok: true }; }
+  catch (err) { return { error: err.message }; }
 });
 
 // ── Clip library ──────────────────────────────────────────────────────────────
@@ -486,15 +511,15 @@ app.whenReady().then(() => {
   );
   tray = new Tray(icon);
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Send Drop',  click: createSenderWindow  },
-    { label: 'Settings',   click: createSettingsWindow },
+    { label: 'Send Drop',  click: () => createSenderWindow()      },
+    { label: 'Settings',   click: () => openSenderTab('settings') },
     { type: 'separator' },
-    { label: 'Quitter',    click: () => app.quit()    },
+    { label: 'Quitter',    click: () => app.quit()                },
   ]);
   tray.setToolTip('MemeDrop');
   tray.setContextMenu(contextMenu);
-  tray.on('click', createSenderWindow); // clic gauche → sender
-  tray.on('double-click', createSettingsWindow);
+  tray.on('click', () => createSenderWindow()); // clic gauche → sender
+  tray.on('double-click', () => openSenderTab('settings'));
 });
 
 // ── Auto-update ───────────────────────────────────────────────────────────────
@@ -502,8 +527,9 @@ autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
 function sendUpdateStatus(msg) {
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    settingsWindow.webContents.send('update-status', msg);
+  // Settings (incl. "check for updates") is now a tab in the sender window.
+  if (senderWindow && !senderWindow.isDestroyed()) {
+    senderWindow.webContents.send('update-status', msg);
   }
 }
 

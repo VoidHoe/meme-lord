@@ -1,0 +1,104 @@
+/* ============================================================================
+   MemeDrop — shared "Battle.net Sci-Fi" launcher theme
+   Imported by sender.html, overlay.html. Tokens + fonts + reusable components.
+   ========================================================================== */
+
+@font-face {
+  font-family: 'Orbitron';
+  src: url('assets/fonts/Orbitron-VF.ttf') format('truetype');
+  font-weight: 400 900; font-display: swap;
+}
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('assets/fonts/Rajdhani-Medium.ttf') format('truetype');
+  font-weight: 500; font-display: swap;
+}
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('assets/fonts/Rajdhani-SemiBold.ttf') format('truetype');
+  font-weight: 600; font-display: swap;
+}
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('assets/fonts/Rajdhani-Bold.ttf') format('truetype');
+  font-weight: 700; font-display: swap;
+}
+
+:root {
+  --bg:        #070d15;
+  --bg2:       #0a1622;
+  --panel:     rgba(8, 22, 36, .55);
+  --panel-2:   #0a1825;
+  --line:      #1d4a6e;
+  --line-soft: rgba(28, 158, 255, .2);
+  --accent:    #1c9eff;
+  --accent-bright: #2eb0ff;
+  --accent-deep:   #0a5fb0;
+  --text:      #cfeaff;
+  --head:      #dcefff;
+  --muted:     #557da0;
+  --faint:     #3c5d7a;
+  --ok:        #39d98a;
+  --danger:    #f87171;
+  --glow:      0 0 18px rgba(28, 158, 255, .5);
+  --glow-soft: 0 0 12px rgba(28, 158, 255, .3);
+  --font-ui:      'Rajdhani', 'Segoe UI', sans-serif;
+  --font-display: 'Orbitron', 'Segoe UI', sans-serif;
+  --cut:   polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  --cut-sm: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+
+/* Atmospheric background — apply to body via class .lc-bg */
+.lc-bg {
+  background:
+    radial-gradient(90% 70% at 50% -8%, #16314a 0%, transparent 55%),
+    radial-gradient(70% 60% at 85% 115%, #0b3a60 0%, transparent 55%),
+    linear-gradient(180deg, var(--bg2) 0%, #0a1019 60%, var(--bg) 100%);
+  position: relative;
+}
+.lc-bg::before {  /* noise grain */
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  opacity: .045; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.lc-bg::after {  /* faint scanlines */
+  content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0 2px, rgba(28,158,255,.025) 2px 3px);
+}
+
+/* Scrollbars */
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #16344e; border-radius: 6px; }
+*::-webkit-scrollbar-thumb:hover { background: #1d4a6e; }
+
+/* ── Reusable components ──────────────────────────────────────────────────── */
+
+.lc-btn {
+  font-family: var(--font-ui); font-weight: 700; letter-spacing: 1.2px;
+  text-transform: uppercase; cursor: pointer; border: none; color: #fff;
+  background: linear-gradient(135deg, var(--accent-bright), var(--accent-deep));
+  clip-path: var(--cut); box-shadow: var(--glow); transition: filter .15s, transform .1s;
+}
+.lc-btn:hover { filter: brightness(1.12); }
+.lc-btn:active { transform: translateY(1px); }
+.lc-btn:disabled { filter: grayscale(.6) brightness(.7); cursor: default; box-shadow: none; }
+
+.lc-ghost {
+  font-family: var(--font-ui); font-weight: 600; letter-spacing: .6px;
+  color: var(--muted); background: var(--panel-2); border: 1px solid var(--line);
+  cursor: pointer; transition: all .15s;
+}
+.lc-ghost:hover { color: var(--accent-bright); border-color: var(--accent); }
+
+.lc-field {
+  width: 100%; font-family: var(--font-ui); font-size: 14px; color: var(--text);
+  background: rgba(6, 20, 34, .6); border: 1px solid var(--line); outline: none;
+  padding: 9px 12px; transition: border-color .15s;
+}
+.lc-field:focus { border-color: var(--accent); box-shadow: var(--glow-soft); }
+.lc-field::placeholder { color: var(--faint); }
+select.lc-field { cursor: pointer; }
+select.lc-field option { background: var(--panel-2); }
+
+input[type="range"] { width: 100%; accent-color: var(--accent); }

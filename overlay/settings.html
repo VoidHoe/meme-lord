@@ -69,11 +69,6 @@
     </div>
   </div>
 
-  <div class="field">
-    <label>Microphone (pour les notes vocales)</label>
-    <select id="micDeviceId"><option value="">Microphone par défaut</option></select>
-    <div class="hint">Le micro utilisé pour enregistrer des notes vocales dans le sender</div>
-  </div>
 
   <div class="field">
     <div class="toggle-row">
@@ -92,6 +87,14 @@
     <label>🎞️ Giphy API Key (for GIF search)</label>
     <input type="text" id="giphyApiKey" placeholder="Get free key at developers.giphy.com">
     <div class="hint">Create App → API type → copy the key (Tenor was shut down Jan 2026)</div>
+  </div>
+
+  <hr>
+
+  <div class="field">
+    <label>🎙️ Voix TTS (ElevenLabs)</label>
+    <select id="elevenLabsVoiceId"><option value="">⏳ Chargement…</option></select>
+    <div class="hint" id="elVoiceHint"></div>
   </div>
 
   <button id="updateBtn" style="background:#2d2d44; margin-top:0;">🔄 Check for updates</button>

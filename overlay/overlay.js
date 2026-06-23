@@ -5,6 +5,9 @@ let queue     = [];
 let isPlaying = false;
 let settings  = { positionX: 50, positionY: 50, duration: 5000, volumeSfx: 80, volumeVoice: 100 };
 
+// Warm up the Web Speech voice list so Chromium has it ready before the first drop.
+try { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices(); } catch {}
+
 // Width + height caps per size. Bigger sizes use viewport units so they
 // scale with the screen — XL takes a big portion of the display.
 const SIZE_MAP = {
@@ -99,6 +102,7 @@ async function processQueue() {
     cap.className = 'drop-caption';
     cap.textContent = event.caption;
     container.appendChild(cap);
+    speakCaption(event.caption);
   }
 
   applyPosition(dropX, dropY);
@@ -160,6 +164,20 @@ async function processQueue() {
   container.innerHTML       = '';
   await sleep(200);
   processQueue();
+}
+
+function speakCaption(text) {
+  if (!text || !settings.ttsVoice) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    const voice = window.speechSynthesis.getVoices().find(v => v.name === settings.ttsVoice);
+    if (voice) { u.voice = voice; u.lang = voice.lang; }
+    u.volume = (settings.volumeVoice || 100) / 100;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(u);
+  } catch (e) {
+    console.warn('[TTS]', e);
+  }
 }
 
 function buildMediaElement(media, loop) {

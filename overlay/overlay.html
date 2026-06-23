@@ -2,6 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <link rel="stylesheet" href="theme.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -26,6 +27,7 @@
       max-height: 360px;
       border-radius: 12px;
       object-fit: contain;
+      box-shadow: 0 0 22px rgba(28,158,255,.28), 0 8px 30px rgba(0,0,0,.5);
     }
     #drop-container iframe {
       width: 480px;
@@ -74,10 +76,16 @@
     /* fade-in/out are applied via container inline style for precise timing */
 
     .drop-caption {
-      background: rgba(0,0,0,0.75);
-      color: #fff;
+      font-family: var(--font-ui);
+      background: rgba(7,13,21,.82);
+      border: 1px solid var(--line-soft);
+      color: var(--head);
+      box-shadow: var(--glow-soft);
+      text-shadow: 0 0 10px rgba(28,158,255,.5);
       font-size: 18px;
-      font-weight: 600;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
       padding: 8px 16px;
       border-radius: 8px;
       max-width: 480px;

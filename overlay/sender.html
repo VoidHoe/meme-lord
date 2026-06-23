@@ -3,358 +3,332 @@
 <head>
   <meta charset="UTF-8" />
   <title>MemeDrop</title>
+  <link rel="stylesheet" href="theme.css" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg:      #0b0a12;
-      --card:    #16131f;
-      --card-2:  #1c1827;
-      --line:    #2a2440;
-      --text:    #f1eefb;
-      --muted:   #9b93bd;
-      --faint:   #5e567e;
-      --violet:  #a78bfa;
-      --pink:    #f472b6;
-      --grad:    linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%);
-    }
+    html, body { height: 100%; }
     body {
-      background: var(--bg); color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 13px; height: 100vh; overflow: hidden;
-      display: flex; flex-direction: column; user-select: none; position: relative;
+      color: var(--text); font-family: var(--font-ui); font-size: 14px;
+      overflow: hidden; user-select: none; display: flex; flex-direction: column;
     }
-    /* ambient glow */
-    body::before {
-      content:''; position:absolute; top:-120px; left:50%; transform:translateX(-50%);
-      width: 380px; height: 280px;
-      background: radial-gradient(circle, rgba(139,92,246,.20), transparent 70%);
-      pointer-events:none; z-index: 0;
-    }
+    #app { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; }
 
-    /* ── Titlebar ── */
+    /* ── Titlebar / nav ─────────────────────────────────────────── */
     #titlebar {
-      padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;
-      -webkit-app-region: drag; flex-shrink: 0; z-index: 1;
+      -webkit-app-region: drag; flex-shrink: 0; height: 48px; display: flex;
+      align-items: center; gap: 14px; padding: 0 14px;
+      border-bottom: 1px solid var(--line-soft);
+      background: linear-gradient(180deg, rgba(28,158,255,.06), transparent);
     }
     .brand { display: flex; align-items: center; gap: 10px; }
-    .logo {
-      width: 30px; height: 30px; border-radius: 9px; background: var(--grad);
-      display: flex; align-items: center; justify-content: center; font-size: 16px;
-      box-shadow: 0 4px 14px rgba(168,85,247,.4);
+    .crest {
+      width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+      font-size: 14px; background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+      clip-path: polygon(25% 0,100% 0,100% 75%,75% 100%,0 100%,0 25%); box-shadow: var(--glow);
     }
-    .brand-txt b { font-size: 15px; font-weight: 800; letter-spacing: .2px; color: var(--text); }
-    .brand-txt small { display: block; font-size: 9.5px; color: var(--faint); margin-top: 1px; }
-    #close-btn {
-      -webkit-app-region: no-drag; background: var(--card); border: 1px solid var(--line);
-      color: var(--muted); font-size: 13px; cursor: pointer; width: 28px; height: 28px;
-      border-radius: 8px; transition: all .15s;
+    .wordmark {
+      font-family: var(--font-display); font-weight: 800; font-size: 14px; letter-spacing: 2.5px;
+      color: var(--head); text-shadow: 0 0 14px rgba(28,158,255,.5);
     }
-    #close-btn:hover { color: #f87171; border-color: rgba(248,113,113,.4); }
-
-    /* ── Main (slide host) ── */
-    #main { flex: 1; overflow: hidden; position: relative; z-index: 1; }
-
-    /* ── Drop view ── */
-    #drop-view {
-      position: absolute; inset: 0; padding: 4px 16px 16px;
-      display: flex; flex-direction: column; gap: 12px; overflow-y: auto;
-      transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    #tabs { -webkit-app-region: no-drag; display: flex; gap: 2px; margin-left: 6px; }
+    .tab {
+      font-family: var(--font-ui); font-weight: 700; font-size: 12.5px; letter-spacing: 1.2px;
+      text-transform: uppercase; color: var(--muted); background: none; border: none;
+      padding: 8px 13px; cursor: pointer; position: relative; transition: color .15s;
     }
-    #drop-view.slide-out { transform: translateX(-100%); }
-
-    /* ── Card ── */
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 15px; }
-    .ch { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
-    .badge { width: 26px; height: 26px; border-radius: 8px; background: var(--card-2); display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
-    .ch .t { font-size: 12px; font-weight: 700; letter-spacing: .3px; }
-    .ch .opt { font-weight: 500; color: var(--faint); font-size: 10.5px; }
-    .ch .right { margin-left: auto; display: flex; gap: 7px; -webkit-app-region: no-drag; }
-    .pill-btn { background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 11px; padding: 5px 11px; cursor: pointer; transition: all .15s; }
-    .pill-btn:hover { color: var(--violet); border-color: var(--violet); }
-
-    /* ── Media drop zone ── */
-    #drop-zone {
-      border: 2px dashed var(--line); border-radius: 13px; background: rgba(255,255,255,.015);
-      padding: 20px; text-align: center; transition: all .2s; cursor: default;
-      display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 96px; justify-content: center;
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent-bright); }
+    .tab.active::after {
+      content: ''; position: absolute; left: 10px; right: 10px; bottom: 2px; height: 2px;
+      background: var(--accent); box-shadow: 0 0 10px var(--accent);
     }
-    #drop-zone .drop-em { font-size: 26px; line-height: 1; }
-    #url-text { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-    #drop-zone .sub { font-size: 11px; color: var(--faint); }
-    #drop-zone:hover { border-color: #3a3360; }
-    #drop-zone.drag-over { border-color: var(--violet); background: rgba(167,139,250,.07); }
-    #drop-zone.has-url { border-style: solid; border-color: rgba(167,139,250,.3); background: rgba(167,139,250,.05); }
-    #drop-zone.has-url .drop-em { font-size: 18px; }
-    #drop-zone.has-url .sub { display: none; }
-    #clear-url { -webkit-app-region: no-drag; background: none; border: none; color: var(--faint); cursor: pointer; font-size: 13px; margin-top: 4px; transition: color .15s; }
-    #clear-url:hover { color: #f87171; }
+    .tab-icon { font-size: 15px; padding: 8px 11px; }
+    .winctl { -webkit-app-region: no-drag; margin-left: auto; display: flex; gap: 6px; }
+    .winctl button {
+      width: 28px; height: 28px; border: 1px solid var(--line); background: var(--panel-2);
+      color: var(--muted); cursor: pointer; font-size: 13px; transition: all .15s;
+      clip-path: var(--cut-sm);
+    }
+    #min-btn:hover { color: var(--accent-bright); border-color: var(--accent); }
+    #close-btn:hover { color: #fff; background: #b3253a; border-color: #b3253a; }
 
-    .paste { margin-top: 11px; display: flex; align-items: center; gap: 9px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 13px; transition: border-color .15s; }
-    .paste:focus-within { border-color: rgba(167,139,250,.4); }
-    .paste .lk { font-size: 13px; }
-    #url-paste { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 12px; font-family: inherit; }
+    /* ── Main / panels ──────────────────────────────────────────── */
+    #main { flex: 1; position: relative; min-height: 0; }
+    .panel { position: absolute; inset: 0; display: none; flex-direction: column; padding: 14px; gap: 11px; }
+    .panel.active { display: flex; }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+      font-family: var(--font-display); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted);
+    }
+
+    /* ── Compose: stage ─────────────────────────────────────────── */
+    .stage {
+      flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 8px; text-align: center;
+      border: 1px solid var(--line-soft); background: rgba(10,24,38,.35);
+      clip-path: var(--cut); transition: border-color .15s, background .15s; overflow: hidden;
+    }
+    .stage::before, .stage::after {
+      content: ''; position: absolute; width: 30px; height: 30px; pointer-events: none;
+      border-color: var(--accent); box-shadow: 0 0 12px rgba(28,158,255,.4);
+    }
+    .stage::before { left: 8px; top: 8px; border-left: 2px solid; border-top: 2px solid; }
+    .stage::after  { right: 8px; bottom: 8px; border-right: 2px solid; border-bottom: 2px solid; }
+    .stage.drag-over { border-color: var(--accent); background: rgba(28,158,255,.1); }
+    .stage.has-media { border-style: solid; }
+    .stage-ic { font-size: 30px; opacity: .85; }
+    .stage-t1 { font-family: var(--font-display); font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--head); padding: 0 16px; }
+    .stage-t2 { font-size: 12px; letter-spacing: .5px; color: var(--muted); text-transform: uppercase; }
+    #stage-media { display: none; width: 100%; height: 100%; align-items: center; justify-content: center; padding: 12px; }
+    #stage-media img, #stage-media video {
+      max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px;
+      box-shadow: 0 0 22px rgba(28,158,255,.25);
+    }
+    #stage-media .embed-ic { font-size: 40px; }
+    #stage-media .embed-label { display: block; margin-top: 8px; font-size: 12px; color: var(--accent-bright); text-transform: uppercase; letter-spacing: 1px; }
+    .snip-chip {
+      -webkit-app-region: no-drag; position: absolute; top: 12px; right: 12px; z-index: 3;
+      font-family: var(--font-ui); font-weight: 700; font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+      color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+      border: none; padding: 7px 12px; cursor: pointer; clip-path: var(--cut-sm); box-shadow: var(--glow-soft);
+    }
+    .snip-chip:hover { filter: brightness(1.12); }
+    .stage-clear {
+      position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 3;
+      background: none; border: none; color: var(--faint); cursor: pointer; font-size: 12px; font-family: inherit;
+    }
+    .stage-clear:hover { color: var(--danger); }
+
+    /* paste bar */
+    .paste-bar {
+      flex-shrink: 0; display: flex; align-items: center; gap: 9px;
+      background: rgba(6,20,34,.6); border: 1px solid var(--line); padding: 9px 12px; transition: border-color .15s;
+    }
+    .paste-bar:focus-within { border-color: var(--accent); box-shadow: var(--glow-soft); }
+    #url-paste { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 13px; font-family: inherit; }
     #url-paste::placeholder { color: var(--faint); }
 
-    /* ── Segmented size ── */
-    .seg { display: flex; background: var(--bg); border: 1px solid var(--line); border-radius: 11px; padding: 4px; gap: 4px; }
-    .size-chip { flex: 1; text-align: center; padding: 8px 0; border-radius: 8px; font-weight: 800; font-size: 12px; color: var(--faint); cursor: pointer; border: none; background: none; font-family: inherit; transition: all .15s; -webkit-app-region: no-drag; }
-    .size-chip:hover { color: var(--muted); }
-    .size-chip.active { background: var(--grad); color: #fff; box-shadow: 0 3px 12px rgba(168,85,247,.4); }
+    #save-clip-btn {
+      flex-shrink: 0; font-family: var(--font-ui); font-weight: 600; letter-spacing: .5px;
+      background: rgba(28,158,255,.08); border: 1px solid var(--line-soft); color: var(--accent-bright);
+      padding: 8px; cursor: pointer; transition: all .15s;
+    }
+    #save-clip-btn:hover { background: rgba(28,158,255,.16); border-color: var(--accent); }
 
-    /* ── Position grid ── */
-    .posrow { display: flex; gap: 15px; align-items: center; margin-top: 13px; }
-    .anchor-grid { display: grid; grid-template-columns: repeat(3,26px); grid-template-rows: repeat(3,26px); gap: 5px; flex-shrink: 0; }
-    .anchor-btn { width:26px; height:26px; border-radius:7px; background: var(--bg); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; cursor:pointer; transition: all .15s; -webkit-app-region: no-drag; }
-    .anchor-btn:hover { border-color: var(--violet); }
-    .anchor-btn.active { background: rgba(167,139,250,.18); border-color: var(--violet); box-shadow: inset 0 0 0 1px rgba(167,139,250,.3); }
-    .anchor-blank { width:26px; height:26px; }
-    .anchor-dot { width:7px; height:7px; border-radius:50%; background:#3a3360; transition: background .15s; }
-    .anchor-btn.active .anchor-dot { background: var(--violet); }
-    .poslabel { font-size: 11px; color: var(--faint); }
-    .poslabel b { color: var(--muted); display:block; font-size:12px; margin-bottom:3px; }
-
-    /* ── Trim card ── */
-    #trim-row.disabled { opacity: 0.4; pointer-events: none; }
-    #trim-empty { font-size: 11px; color: var(--faint); font-style: italic; padding: 4px 0 2px; }
-    #trim-editor { display: flex; flex-direction: column; gap: 9px; }
-    #trim-video {
-      width: 100%; max-height: 130px; border-radius: 10px; background: #000;
-      object-fit: contain; display: block;
+    /* advanced */
+    .advanced { flex-shrink: 0; border: 1px solid var(--line); background: rgba(6,20,34,.4); }
+    .advanced summary {
+      list-style: none; cursor: pointer; padding: 9px 12px; font-size: 12px; font-weight: 700;
+      letter-spacing: 1px; text-transform: uppercase; color: var(--muted); user-select: none;
     }
-    #trim-track {
-      -webkit-app-region: no-drag; position: relative; height: 26px; border-radius: 8px;
-      background: var(--bg); border: 1px solid var(--line); cursor: pointer; touch-action: none;
+    .advanced summary::-webkit-details-marker { display: none; }
+    .advanced[open] summary { color: var(--accent-bright); border-bottom: 1px solid var(--line-soft); }
+    .adv-body { padding: 11px 12px; display: flex; flex-direction: column; gap: 10px; }
+    .adv-row { display: flex; gap: 9px; align-items: center; }
+    #refresh-btn {
+      flex-shrink: 0; background: rgba(6,20,34,.6); border: 1px solid var(--line); color: var(--muted);
+      font-size: 15px; cursor: pointer; padding: 0 13px; transition: all .15s; align-self: stretch;
     }
-    #trim-range {
-      position: absolute; top: 0; bottom: 0; left: 0; width: 100%;
-      background: rgba(167,139,250,.22); border-left: 2px solid var(--violet); border-right: 2px solid var(--violet);
-    }
-    .trim-handle {
-      -webkit-app-region: no-drag; position: absolute; top: 50%; width: 14px; height: 30px;
-      transform: translate(-50%, -50%); border-radius: 5px; background: var(--grad);
-      box-shadow: 0 2px 8px rgba(168,85,247,.5); cursor: ew-resize; touch-action: none; z-index: 2;
-    }
-    #trim-playhead {
-      position: absolute; top: -2px; bottom: -2px; left: 0; width: 2px;
-      background: #fff; box-shadow: 0 0 6px rgba(255,255,255,.8); pointer-events: none; z-index: 1; display: none;
-    }
-    #trim-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    #trim-readout { font-size: 11.5px; color: var(--violet); font-weight: 700; font-variant-numeric: tabular-nums; }
-    #trim-rep { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--faint); }
-    #trim-rep button {
-      -webkit-app-region: no-drag; width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--line);
-      background: var(--bg); color: var(--violet); font-size: 14px; font-weight: 800; cursor: pointer; line-height: 1;
-      font-family: inherit;
-    }
-    #trim-rep button:hover { border-color: var(--violet); }
-    #trim-rep-val { color: var(--text); font-weight: 700; min-width: 18px; text-align: center; }
-    #trim-preview-btn {
-      -webkit-app-region: no-drag; margin-left: auto; background: var(--bg); border: 1px solid var(--line);
-      border-radius: 8px; color: var(--muted); font-size: 11px; font-weight: 600; padding: 6px 11px;
-      cursor: pointer; font-family: inherit; transition: all .15s;
-    }
-    #trim-preview-btn:hover { border-color: var(--violet); color: var(--violet); }
-
-    /* ── Duo (effects + voice) ── */
-    .duo { display: flex; gap: 13px; }
-    .duo > .card { flex: 1; }
+    #refresh-btn:hover { color: var(--accent-bright); border-color: var(--accent); }
+    @keyframes spinAnim { to { transform: rotate(360deg); } }
+    #refresh-btn.spinning { animation: spinAnim .5s linear; }
     .chips { display: flex; gap: 8px; }
-    .chip { padding: 7px 14px; border-radius: 20px; border: 1px solid var(--line); background: var(--bg); color: var(--faint); font-size: 11px; font-weight: 700; cursor: pointer; transition: all .15s; }
-    .chip:hover { color: var(--muted); border-color: var(--violet); }
-    .chip.active { background: rgba(167,139,250,.15); border-color: var(--violet); color: var(--violet); }
-    #mic-btn { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 11px; color: var(--muted); font-size: 12px; font-weight: 600; padding: 10px; cursor: pointer; font-family: inherit; transition: all .15s; }
-    #mic-btn:hover { border-color: var(--pink); color: var(--pink); }
-    #mic-btn.recording { background: rgba(239,68,68,0.08); border-color: #ef4444; color: #ef4444; animation: recPulse 0.9s ease-in-out infinite; }
-    #mic-btn.has-audio { background: rgba(74,222,128,0.07); border-color: #4ade80; color: #4ade80; }
-    @keyframes recPulse { 0%,100%{opacity:1} 50%{opacity:0.55} }
-    #voice-label { font-size: 10px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 6px; text-align: center; }
-    #voice-label.active { color: #4ade80; }
-
-    /* ── Target + caption ── */
-    .field { width:100%; background: var(--bg); border:1px solid var(--line); border-radius:11px; padding:11px 13px; color: var(--text); font-size:12px; outline:none; font-family:inherit; transition: border-color .15s; }
-    .field:focus { border-color: rgba(167,139,250,.45); }
-    .field::placeholder { color: var(--faint); }
-    select.field { cursor: pointer; }
-    select.field option { background: var(--card); }
-    .target-row { display:flex; gap:9px; margin-bottom: 10px; }
-    #refresh-btn { background: var(--bg); border:1px solid var(--line); border-radius:11px; color: var(--muted); font-size:16px; cursor:pointer; padding:0 14px; transition: all .15s; flex-shrink: 0; }
-    #refresh-btn:hover { border-color: var(--violet); color: var(--violet); }
-    @keyframes spinAnim { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    #refresh-btn.spinning { animation: spinAnim 0.5s linear; }
-
-    /* ── Send ── */
-    #send-btn {
-      width:100%; background: var(--grad); color:#fff; border:none; border-radius:14px;
-      padding:16px; font-size:15px; font-weight:800; cursor:pointer; letter-spacing:.4px;
-      box-shadow: 0 8px 28px rgba(168,85,247,.42); font-family:inherit; transition: all .2s;
+    .chip {
+      padding: 6px 13px; border: 1px solid var(--line); background: rgba(6,20,34,.6); color: var(--muted);
+      font-size: 12px; font-weight: 700; letter-spacing: .5px; cursor: pointer; transition: all .15s; clip-path: var(--cut-sm);
     }
-    #send-btn:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 10px 32px rgba(168,85,247,.55); }
-    #send-btn:active { transform: translateY(0); }
-    #send-btn:disabled { background: var(--card-2); color: var(--faint); cursor: default; box-shadow: none; transform: none; filter: none; }
+    .chip:hover { color: var(--accent-bright); border-color: var(--accent); }
+    .chip.active { background: rgba(28,158,255,.15); border-color: var(--accent); color: var(--accent-bright); }
 
-    /* ── Status ── */
-    #status { text-align: center; font-size: 11px; color: var(--faint); min-height: 14px; }
-    #status.ok  { color: #4ade80; }
-    #status.err { color: #f87171; }
+    /* trim */
+    #trim-row.disabled { opacity: .4; pointer-events: none; }
+    #trim-empty { font-size: 12px; color: var(--faint); font-style: italic; }
+    #trim-editor { display: flex; flex-direction: column; gap: 9px; }
+    #trim-video { width: 100%; max-height: 120px; border-radius: 4px; background: #000; object-fit: contain; }
+    #trim-track { -webkit-app-region: no-drag; position: relative; height: 26px; background: rgba(6,20,34,.7); border: 1px solid var(--line); cursor: pointer; touch-action: none; }
+    #trim-range { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; background: rgba(28,158,255,.22); border-left: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+    .trim-handle { -webkit-app-region: no-drag; position: absolute; top: 50%; width: 14px; height: 30px; transform: translate(-50%,-50%); border-radius: 3px; background: linear-gradient(135deg,var(--accent),var(--accent-deep)); box-shadow: var(--glow-soft); cursor: ew-resize; touch-action: none; z-index: 2; }
+    #trim-playhead { position: absolute; top: -2px; bottom: -2px; left: 0; width: 2px; background: #fff; box-shadow: 0 0 6px #fff; pointer-events: none; z-index: 1; display: none; }
+    #trim-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    #trim-readout { font-size: 12px; color: var(--accent-bright); font-weight: 700; font-variant-numeric: tabular-nums; }
+    #trim-rep { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+    #trim-rep button { -webkit-app-region: no-drag; width: 22px; height: 22px; border: 1px solid var(--line); background: rgba(6,20,34,.6); color: var(--accent-bright); font-size: 14px; font-weight: 800; cursor: pointer; line-height: 1; font-family: inherit; }
+    #trim-rep-val { color: var(--text); font-weight: 700; min-width: 18px; text-align: center; }
+    #trim-preview-btn { -webkit-app-region: no-drag; margin-left: auto; background: rgba(6,20,34,.6); border: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 600; padding: 6px 11px; cursor: pointer; font-family: inherit; transition: all .15s; }
+    #trim-preview-btn:hover { border-color: var(--accent); color: var(--accent-bright); }
 
-    /* ── GIF view ── */
-    #gif-view, #history-view {
-      position: absolute; inset: 0; padding: 14px 16px;
-      display: flex; flex-direction: column; gap: 12px; background: var(--bg);
-      transform: translateX(100%); transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    /* dock */
+    .dock {
+      flex-shrink: 0; display: flex; align-items: stretch; gap: 9px; padding: 11px;
+      border: 1px solid var(--line-soft); background: linear-gradient(180deg, transparent, rgba(6,20,34,.5));
     }
-    #gif-view.slide-in, #history-view.slide-in { transform: translateX(0); }
-    .view-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-shrink: 0; }
-    .view-title { font-size: 12px; font-weight: 700; letter-spacing: .3px; color: var(--muted); }
-    #gif-back-btn, #history-back-btn {
-      background: var(--card); border: 1px solid var(--line); border-radius: 9px;
-      color: var(--muted); font-size: 12px; cursor: pointer; padding: 7px 13px;
-      transition: all .15s; font-family: inherit; flex-shrink: 0;
-    }
-    #gif-back-btn:hover, #history-back-btn:hover { border-color: var(--violet); color: var(--violet); }
-    #gif-search-input {
-      width: 100%; flex-shrink: 0; background: var(--card); border: 1px solid var(--line);
-      border-radius: 11px; padding: 11px 13px; color: var(--text); font-size: 13px; outline: none;
-      transition: border-color .15s; font-family: inherit;
-    }
-    #gif-search-input:focus { border-color: var(--violet); }
-    #gif-search-input::placeholder { color: var(--faint); }
-    #gif-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; overflow-y: auto; flex: 1; }
-    .gif-item { aspect-ratio: 16/9; border-radius: 9px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color .15s, transform .15s; background: var(--card); }
-    .gif-item:hover { border-color: var(--violet); transform: scale(1.03); }
+    .seg { display: flex; gap: 2px; border: 1px solid var(--line); padding: 3px; background: rgba(6,20,34,.6); flex-shrink: 0; }
+    .size-chip { width: 30px; text-align: center; padding: 0; font-weight: 800; font-size: 12px; color: var(--muted); cursor: pointer; border: none; background: none; font-family: inherit; transition: all .15s; }
+    .size-chip:hover { color: var(--text); }
+    .size-chip.active { background: linear-gradient(135deg,var(--accent),var(--accent-deep)); color: #fff; }
+    .anchor-grid { display: grid; grid-template-columns: repeat(3,16px); grid-template-rows: repeat(3,16px); gap: 3px; flex-shrink: 0; align-self: center; }
+    .anchor-btn { width: 16px; height: 16px; background: rgba(6,20,34,.6); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .15s; padding: 0; }
+    .anchor-btn:hover { border-color: var(--accent); }
+    .anchor-btn.active { background: rgba(28,158,255,.18); border-color: var(--accent); }
+    .anchor-blank { width: 16px; height: 16px; }
+    .anchor-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--faint); transition: background .15s; }
+    .anchor-btn.active .anchor-dot { background: var(--accent); }
+    .dock .cap { flex: 1; min-width: 0; }
+    #send-btn { flex-shrink: 0; padding: 0 22px; font-size: 13px; }
+
+    #status { flex-shrink: 0; text-align: center; font-size: 12px; color: var(--muted); min-height: 14px; letter-spacing: .5px; }
+    #status.ok { color: var(--ok); } #status.err { color: var(--danger); }
+
+    /* ── GIF panel ──────────────────────────────────────────────── */
+    #gif-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; overflow-y: auto; flex: 1; align-content: start; }
+    .gif-item { aspect-ratio: 16/9; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color .15s, transform .15s; background: var(--panel-2); }
+    .gif-item:hover { border-color: var(--accent); transform: scale(1.03); }
     .gif-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    #gif-status { text-align: center; font-size: 12px; color: var(--faint); padding: 30px 0; flex-shrink: 0; }
+    #gif-status { text-align: center; font-size: 13px; color: var(--muted); padding: 24px 0; flex-shrink: 0; }
 
-    /* ── History view ── */
-    #history-clear-btn { background: none; border: 1px solid var(--line); border-radius: 8px; color: var(--faint); font-size: 11px; cursor: pointer; padding: 6px 11px; transition: all .15s; font-family: inherit; }
-    #history-clear-btn:hover { border-color: rgba(248,113,113,.4); color: #f87171; }
+    /* ── History panel ──────────────────────────────────────────── */
+    #history-clear-btn { background: none; border: 1px solid var(--line); color: var(--faint); font-size: 11px; cursor: pointer; padding: 6px 11px; transition: all .15s; font-family: inherit; letter-spacing: .5px; }
+    #history-clear-btn:hover { border-color: var(--danger); color: var(--danger); }
     #history-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; }
-    #history-empty { text-align: center; font-size: 12px; color: var(--faint); padding: 30px 0; flex-shrink: 0; }
-    .history-entry { display: flex; align-items: center; gap: 11px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 9px 11px; transition: border-color .15s; }
-    .history-entry:hover { border-color: rgba(167,139,250,.3); }
-    .history-thumb { width: 44px; height: 44px; border-radius: 9px; overflow: hidden; background: var(--bg); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    #history-empty, #library-empty { text-align: center; font-size: 13px; color: var(--muted); padding: 24px 16px; flex-shrink: 0; }
+    .history-entry { display: flex; align-items: center; gap: 11px; background: rgba(6,20,34,.5); border: 1px solid var(--line); padding: 9px 11px; transition: border-color .15s; }
+    .history-entry:hover { border-color: var(--accent); }
+    .history-thumb { width: 44px; height: 44px; overflow: hidden; background: rgba(0,0,0,.4); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 20px; }
     .history-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .history-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-    .history-caption { font-size: 12px; color: var(--violet); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .history-caption { font-size: 13px; color: var(--accent-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .history-caption.no-caption { color: var(--faint); font-style: italic; }
-    .history-time { font-size: 10px; color: var(--faint); }
-    .history-resend { background: rgba(167,139,250,.1); border: 1px solid rgba(167,139,250,.25); border-radius: 9px; color: var(--violet); font-size: 11px; cursor: pointer; padding: 6px 11px; transition: all .15s; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
-    .history-resend:hover { border-color: var(--violet); background: rgba(167,139,250,.2); }
-    .history-resend:disabled { opacity: 0.4; cursor: default; }
+    .history-time { font-size: 11px; color: var(--faint); }
+    .history-resend { background: rgba(28,158,255,.1); border: 1px solid var(--line-soft); color: var(--accent-bright); font-size: 12px; cursor: pointer; padding: 6px 11px; transition: all .15s; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
+    .history-resend:hover { border-color: var(--accent); background: rgba(28,158,255,.2); }
+    .history-resend:disabled { opacity: .4; cursor: default; }
 
-    /* ── Favorites modal ── */
-    #fav-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.72); align-items: center; justify-content: center; z-index: 99; backdrop-filter: blur(3px); }
-    #fav-modal.open { display: flex; }
-    #fav-modal-box { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; width: 280px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.55); }
-    #fav-name-input { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; font-family: inherit; }
-    #fav-name-input:focus { border-color: var(--violet); }
-    #fav-modal-row { display: flex; gap: 8px; }
-    #fav-save-ok { flex: 1; background: var(--grad); border: none; border-radius: 10px; color: #fff; padding: 10px; cursor: pointer; font-size: 13px; font-weight: 700; font-family: inherit; }
-    #fav-save-ok:hover { filter: brightness(1.1); }
-    #fav-save-cancel { flex: 1; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; color: var(--muted); padding: 10px; cursor: pointer; font-size: 13px; font-family: inherit; }
-    #fav-save-cancel:hover { color: var(--text); }
-    .modal-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
-
-    /* ── Save-to-library button ── */
-    #save-clip-btn {
-      margin-top: 10px; width: 100%; background: rgba(167,139,250,.08);
-      border: 1px solid rgba(167,139,250,.25); border-radius: 11px;
-      color: var(--violet); font-size: 12px; font-weight: 600; padding: 9px;
-      cursor: pointer; font-family: inherit; transition: all .15s;
-    }
-    #save-clip-btn:hover { background: rgba(167,139,250,.16); border-color: var(--violet); }
-
-    /* ── Library view ── */
-    #library-view {
-      position: absolute; inset: 0; padding: 14px 16px;
-      display: flex; flex-direction: column; gap: 12px; background: var(--bg);
-      transform: translateX(100%); transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    #library-view.slide-in { transform: translateX(0); }
-
-    /* situation chips (filter + picker) */
-    #situation-filter, #lib-situation-pick { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
-    .sit-chip {
-      padding: 6px 11px; border-radius: 20px; border: 1px solid var(--line);
-      background: var(--card); color: var(--muted); font-size: 11px; font-weight: 600;
-      cursor: pointer; transition: all .15s; white-space: nowrap;
-    }
-    .sit-chip:hover { border-color: var(--violet); color: var(--violet); }
-    .sit-chip.active { background: rgba(167,139,250,.16); border-color: var(--violet); color: var(--violet); }
-
-    #library-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; overflow-y: auto; flex: 1; align-content: start; }
-    .clip-tile { position: relative; border-radius: 11px; overflow: hidden; border: 1px solid var(--line); background: var(--card); cursor: pointer; transition: border-color .15s, transform .15s; }
-    .clip-tile:hover { border-color: var(--violet); transform: scale(1.02); }
+    /* ── Library panel ──────────────────────────────────────────── */
+    #situation-filter { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+    .sit-chip { padding: 6px 11px; border: 1px solid var(--line); background: rgba(6,20,34,.5); color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; clip-path: var(--cut-sm); }
+    .sit-chip:hover { border-color: var(--accent); color: var(--accent-bright); }
+    .sit-chip.active { background: rgba(28,158,255,.16); border-color: var(--accent); color: var(--accent-bright); }
+    #library-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; overflow-y: auto; flex: 1; align-content: start; }
+    .clip-tile { position: relative; overflow: hidden; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; transition: border-color .15s, transform .15s; }
+    .clip-tile:hover { border-color: var(--accent); transform: scale(1.02); }
     .clip-tile video { width: 100%; aspect-ratio: 16/10; object-fit: cover; display: block; background: #000; }
-    .clip-tile .clip-name { padding: 6px 8px; font-size: 11px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .clip-tile .clip-del { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 6px; border: none; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .15s; }
+    .clip-tile .clip-name { padding: 6px 8px; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .clip-tile .clip-del { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border: none; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .15s; }
     .clip-tile:hover .clip-del { opacity: 1; }
     .clip-tile .clip-del:hover { background: rgba(248,113,113,.85); }
-    .clip-tile .clip-sending { position: absolute; inset: 0; background: rgba(11,10,18,.7); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--violet); font-weight: 700; }
-    #library-empty { text-align: center; font-size: 12px; color: var(--faint); padding: 30px 16px; flex-shrink: 0; }
+    .clip-tile .clip-sending { position: absolute; inset: 0; background: rgba(7,13,21,.75); display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--accent-bright); font-weight: 700; }
 
-    /* ── Library save modal ── */
-    #lib-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.72); align-items: center; justify-content: center; z-index: 99; backdrop-filter: blur(3px); }
-    #lib-modal.open { display: flex; }
-    #lib-modal-box { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; width: 300px; display: flex; flex-direction: column; gap: 11px; box-shadow: 0 20px 60px rgba(0,0,0,0.55); }
-    #lib-name-input { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none; font-family: inherit; }
-    #lib-name-input:focus { border-color: var(--violet); }
-    #lib-modal-row { display: flex; gap: 8px; margin-top: 4px; }
-    #lib-save-ok { flex: 1; background: var(--grad); border: none; border-radius: 10px; color: #fff; padding: 10px; cursor: pointer; font-size: 13px; font-weight: 700; font-family: inherit; }
-    #lib-save-ok:hover { filter: brightness(1.1); }
-    #lib-save-ok:disabled { opacity: .5; cursor: default; filter: none; }
-    #lib-save-cancel { flex: 1; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; color: var(--muted); padding: 10px; cursor: pointer; font-size: 13px; font-family: inherit; }
-    #lib-save-cancel:hover { color: var(--text); }
+    /* ── Settings panel ─────────────────────────────────────────── */
+    #settings-panel { overflow-y: auto; gap: 0; }
+    .set-field { margin-bottom: 15px; }
+    .set-field > label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .8px; font-weight: 600; }
+    .range-row { display: flex; align-items: center; gap: 12px; }
+    .range-value { min-width: 38px; text-align: right; font-size: 13px; color: var(--accent-bright); font-weight: 700; }
+    .set-hr { border: none; border-top: 1px solid var(--line-soft); margin: 4px 0 16px; }
+    .set-hint { font-size: 11px; color: var(--faint); margin-top: 5px; }
+    .toggle-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .toggle-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; margin: 0; }
+    .toggle-row label { font-size: 14px; color: var(--text); cursor: pointer; }
+    #settings-save-btn { width: 100%; padding: 13px; font-size: 14px; margin-top: 4px; }
+    #settings-update-btn { width: 100%; padding: 11px; margin-top: 14px; }
+    .set-status { font-size: 12px; color: var(--ok); margin-top: 8px; min-height: 16px; }
+
+    /* ── Modals ─────────────────────────────────────────────────── */
+    .modal { display: none; position: fixed; inset: 0; background: rgba(2,6,12,.78); align-items: center; justify-content: center; z-index: 99; backdrop-filter: blur(3px); }
+    .modal.open { display: flex; }
+    .modal-box { background: var(--bg2); border: 1px solid var(--line); padding: 20px; width: 300px; display: flex; flex-direction: column; gap: 11px; box-shadow: 0 20px 60px rgba(0,0,0,.6); clip-path: var(--cut); }
+    .modal-box input { width: 100%; background: rgba(6,20,34,.6); border: 1px solid var(--line); padding: 10px 12px; color: #fff; font-size: 13px; outline: none; font-family: inherit; }
+    .modal-box input:focus { border-color: var(--accent); }
+    .modal-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+    .modal-row { display: flex; gap: 8px; margin-top: 4px; }
+    .modal-row button { flex: 1; padding: 10px; cursor: pointer; font-size: 13px; font-family: inherit; }
+    .modal-ok { font-weight: 700; }
+    .modal-cancel { background: rgba(6,20,34,.6); border: 1px solid var(--line); color: var(--muted); }
+    .modal-cancel:hover { color: var(--text); }
+    #lib-situation-pick { display: flex; flex-wrap: wrap; gap: 6px; }
   </style>
 </head>
-<body>
+<body class="lc-bg">
+  <div id="app">
 
-  <div id="titlebar">
-    <div class="brand">
-      <div class="logo">🎭</div>
-      <div class="brand-txt"><b>MemeDrop</b><small>Ctrl + Shift + D</small></div>
-    </div>
-    <button id="close-btn">✕</button>
-  </div>
+    <!-- ── Top bar / nav ── -->
+    <header id="titlebar">
+      <div class="brand">
+        <div class="crest">🎭</div>
+        <div class="wordmark">MEMEDROP</div>
+      </div>
+      <nav id="tabs">
+        <button class="tab active" data-tab="compose">Compose</button>
+        <button class="tab" data-tab="library">Library</button>
+        <button class="tab" data-tab="gif">GIFs</button>
+        <button class="tab" data-tab="history">History</button>
+        <button class="tab tab-icon" data-tab="settings" title="Settings">⚙</button>
+      </nav>
+      <div class="winctl">
+        <button id="min-btn" title="Minimize">—</button>
+        <button id="close-btn" title="Close">✕</button>
+      </div>
+    </header>
 
-  <div id="main">
+    <main id="main">
 
-    <!-- ── Drop view ── -->
-    <div id="drop-view">
-
-      <!-- Media -->
-      <div class="card">
-        <div class="ch">
-          <div class="badge">📎</div><div class="t">Media</div>
-          <div class="right">
-            <button id="open-library-btn" class="pill-btn">📚 Library</button>
-            <button id="open-history-btn" class="pill-btn">🕐</button>
-            <button id="open-gif-btn" class="pill-btn">🔍 GIFs</button>
+      <!-- ── Compose ── -->
+      <section class="panel active" id="compose-panel">
+        <div class="stage" id="drop-zone">
+          <button id="snip-btn" class="snip-chip">📸 Snip</button>
+          <div id="stage-media"></div>
+          <div id="stage-prompt">
+            <div class="stage-ic">📋</div>
+            <div id="url-text" class="stage-t1">Paste or drop your meme</div>
+            <div class="stage-t2">Ctrl+V a screenshot · drag a file · paste a link</div>
           </div>
+          <button id="clear-url" class="stage-clear" style="display:none">✕ clear</button>
         </div>
-        <div id="drop-zone">
-          <span class="drop-em">🎬</span>
-          <span id="url-text">Drop a file here, or paste a URL below</span>
-          <span class="sub">video, image, gif…</span>
-          <button id="clear-url" style="display:none">✕ clear</button>
-        </div>
-        <div class="paste">
+
+        <div class="paste-bar">
           <span class="lk">🔗</span>
-          <input id="url-paste" type="text" placeholder="…or paste a link" />
+          <input id="url-paste" type="text" placeholder="…or paste a link (TikTok, X, YouTube, image, mp4)" />
         </div>
         <button id="save-clip-btn" style="display:none">★ Save to library</button>
-      </div>
 
-      <!-- Size & Position -->
-      <div class="card">
-        <div class="ch"><div class="badge">📐</div><div class="t">Size &amp; Position</div></div>
-        <div class="seg">
-          <button class="size-chip" data-size="s">S</button>
-          <button class="size-chip active" data-size="m">M</button>
-          <button class="size-chip" data-size="l">L</button>
-          <button class="size-chip" data-size="xl">XL</button>
-        </div>
-        <div class="posrow">
+        <details class="advanced" id="advanced">
+          <summary>⚙ Options — target · effects · trim</summary>
+          <div class="adv-body">
+            <div class="adv-row">
+              <select id="target" class="lc-field"><option value="">🎯 Everyone</option></select>
+              <button id="refresh-btn" title="Refresh users">↻</button>
+            </div>
+            <div class="adv-row chips">
+              <div class="chip" data-fx="spin">✦ spin</div>
+              <div class="chip" data-fx="fade">◌ fade</div>
+            </div>
+            <div id="trim-row" class="trim disabled">
+              <div id="trim-empty">load a video to trim</div>
+              <div id="trim-editor" style="display:none">
+                <video id="trim-video" muted playsinline preload="metadata"></video>
+                <div id="trim-track">
+                  <div id="trim-range"></div>
+                  <div id="trim-playhead"></div>
+                  <div class="trim-handle" id="trim-h-start"></div>
+                  <div class="trim-handle" id="trim-h-end"></div>
+                </div>
+                <div id="trim-meta">
+                  <span id="trim-readout">0:00 → 0:00 · 0.0s</span>
+                  <span id="trim-rep">🔁 <button id="trim-rep-dn">−</button><span id="trim-rep-val">1×</span><button id="trim-rep-up">+</button></span>
+                  <button id="trim-preview-btn">▶ Preview</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="dock">
+          <div class="seg">
+            <button class="size-chip" data-size="s">S</button>
+            <button class="size-chip active" data-size="m">M</button>
+            <button class="size-chip" data-size="l">L</button>
+            <button class="size-chip" data-size="xl">XL</button>
+          </div>
           <div class="anchor-grid">
             <button class="anchor-btn" data-anchor="top-left"><div class="anchor-dot"></div></button>
             <div class="anchor-blank"></div>
@@ -366,120 +340,101 @@
             <div class="anchor-blank"></div>
             <button class="anchor-btn" data-anchor="bottom-right"><div class="anchor-dot"></div></button>
           </div>
-          <div class="poslabel"><b>Anchor</b>Where it lands on screen</div>
+          <input id="caption" type="text" class="lc-field cap" placeholder="Caption…" />
+          <button id="send-btn" class="lc-btn">SEND ▸</button>
         </div>
-      </div>
+        <div id="status"></div>
+      </section>
 
-      <!-- Trim -->
-      <div class="card disabled" id="trim-row">
-        <div class="ch"><div class="badge">✂️</div><div class="t">Trim</div></div>
-        <div id="trim-empty">load a video to trim</div>
-        <div id="trim-editor" style="display:none">
-          <video id="trim-video" muted playsinline preload="metadata"></video>
-          <div id="trim-track">
-            <div id="trim-range"></div>
-            <div id="trim-playhead"></div>
-            <div class="trim-handle" id="trim-h-start"></div>
-            <div class="trim-handle" id="trim-h-end"></div>
-          </div>
-          <div id="trim-meta">
-            <span id="trim-readout">0:00 → 0:00 · 0.0s</span>
-            <span id="trim-rep">🔁 <button id="trim-rep-dn">−</button><span id="trim-rep-val">1×</span><button id="trim-rep-up">+</button></span>
-            <button id="trim-preview-btn">▶ Preview</button>
-          </div>
+      <!-- ── Library ── -->
+      <section class="panel" id="library-panel">
+        <div id="situation-filter"></div>
+        <div id="library-grid"></div>
+        <div id="library-empty">No clips saved yet — paste a video in Compose and hit ★ Save</div>
+      </section>
+
+      <!-- ── GIFs ── -->
+      <section class="panel" id="gif-panel">
+        <input id="gif-search-input" class="lc-field" type="text" placeholder="Search GIFs — fail, win, haha…" />
+        <div id="gif-grid"></div>
+        <div id="gif-status">Type something to search</div>
+      </section>
+
+      <!-- ── History ── -->
+      <section class="panel" id="history-panel">
+        <div class="panel-head"><span>Drop History</span><button id="history-clear-btn">Clear</button></div>
+        <div id="history-list"></div>
+        <div id="history-empty">No drops sent yet</div>
+      </section>
+
+      <!-- ── Settings ── -->
+      <section class="panel" id="settings-panel">
+        <div class="set-field">
+          <label>Server URL</label>
+          <input type="url" id="serverUrl" class="lc-field" placeholder="https://your-app.railway.app">
         </div>
-      </div>
-
-      <!-- Effects + Voice -->
-      <div class="duo">
-        <div class="card">
-          <div class="ch"><div class="badge">✨</div><div class="t">Effects</div></div>
-          <div class="chips">
-            <div class="chip" data-fx="spin">✦ spin</div>
-            <div class="chip" data-fx="fade">◌ fade</div>
-          </div>
+        <div class="set-field">
+          <label>Discord pseudo (to be targetable)</label>
+          <input type="text" id="discordUsername" class="lc-field" placeholder="Tanguy">
         </div>
-        <div class="card">
-          <div class="ch"><div class="badge">🎤</div><div class="t">Voice <span class="opt">opt</span></div></div>
-          <button id="mic-btn">● Record</button>
-          <div id="voice-label">No recording</div>
+        <hr class="set-hr">
+        <div class="set-field">
+          <label>Display duration</label>
+          <div class="range-row"><input type="range" id="duration" min="1" max="10" step="1"><span class="range-value"><span id="durationVal">5</span>s</span></div>
         </div>
-      </div>
-
-      <!-- Send to -->
-      <div class="card">
-        <div class="ch"><div class="badge">🎯</div><div class="t">Send to</div></div>
-        <div class="target-row">
-          <select id="target" class="field"><option value="">Everyone</option></select>
-          <button id="refresh-btn" title="Refresh">↻</button>
+        <div class="set-field">
+          <label>SFX volume</label>
+          <div class="range-row"><input type="range" id="volumeSfx" min="0" max="100" step="5"><span class="range-value" id="volumeSfxVal">80</span></div>
         </div>
-        <input id="caption" type="text" class="field" placeholder="Add a caption…" />
-      </div>
+        <div class="set-field">
+          <label>Voice volume</label>
+          <div class="range-row"><input type="range" id="volumeVoice" min="0" max="100" step="5"><span class="range-value" id="volumeVoiceVal">100</span></div>
+        </div>
+        <div class="set-field">
+          <div class="toggle-row"><input type="checkbox" id="tryhardMode"><label for="tryhardMode">😤 Tryhard mode</label></div>
+          <div class="set-hint">Drops you receive appear small, top-right corner (so they don't block your game)</div>
+        </div>
+        <hr class="set-hr">
+        <div class="set-field">
+          <label>🎙️ Caption voice (free, offline)</label>
+          <select id="ttsVoice" class="lc-field"><option value="">🔇 Off</option></select>
+          <div class="set-hint" id="ttsHint">Reads captions aloud using your system voices. No API, no cost.</div>
+        </div>
+        <div class="set-field">
+          <label>🎞️ Giphy API key (for GIF search)</label>
+          <input type="text" id="giphyApiKey" class="lc-field" placeholder="Get a free key at developers.giphy.com">
+        </div>
+        <button id="settings-save-btn" class="lc-btn">💾 Save</button>
+        <div class="set-status" id="settings-status"></div>
+        <button id="settings-update-btn" class="lc-ghost">🔄 Check for updates</button>
+        <div class="set-status" id="settings-update-status"></div>
+      </section>
 
-      <button id="send-btn">🚀 Send Drop</button>
-      <div id="status"></div>
-
-    </div>
-
-    <!-- ── History view (slides in) ── -->
-    <div id="history-view">
-      <div class="view-nav">
-        <button id="history-back-btn">← Back</button>
-        <div class="view-title">Drop History</div>
-        <button id="history-clear-btn">Clear</button>
-      </div>
-      <div id="history-list"></div>
-      <div id="history-empty">No drops sent yet</div>
-    </div>
-
-    <!-- ── Library view (slides in) ── -->
-    <div id="library-view">
-      <div class="view-nav">
-        <button id="library-back-btn">← Back</button>
-        <div class="view-title">Clip Library</div>
-        <span style="width:54px"></span>
-      </div>
-      <div id="situation-filter"></div>
-      <div id="library-grid"></div>
-      <div id="library-empty">No clips saved yet — paste a video and hit ★ Save</div>
-    </div>
-
-    <!-- ── GIF search view (slides in) ── -->
-    <div id="gif-view">
-      <div class="view-nav">
-        <button id="gif-back-btn">← Back</button>
-        <div class="view-title">GIF Search</div>
-        <span style="width:54px"></span>
-      </div>
-      <input id="gif-search-input" type="text" placeholder="Search GIFs — fail, win, haha…" />
-      <div id="gif-grid"></div>
-      <div id="gif-status">Type something to search</div>
-    </div>
-
+    </main>
   </div>
 
   <!-- Save-to-library modal -->
-  <div id="lib-modal">
-    <div id="lib-modal-box">
+  <div class="modal" id="lib-modal">
+    <div class="modal-box">
       <div class="modal-label">Save clip to library</div>
       <input id="lib-name-input" type="text" placeholder="Name — e.g. Ronaldo SIUUU" />
       <div class="modal-label" style="margin-top:2px">Which situation?</div>
       <div id="lib-situation-pick"></div>
-      <div id="lib-modal-row">
-        <button id="lib-save-ok">Save</button>
-        <button id="lib-save-cancel">Cancel</button>
+      <div class="modal-row">
+        <button id="lib-save-ok" class="lc-btn modal-ok">Save</button>
+        <button id="lib-save-cancel" class="modal-cancel">Cancel</button>
       </div>
     </div>
   </div>
 
   <!-- Save favorite modal -->
-  <div id="fav-modal">
-    <div id="fav-modal-box">
+  <div class="modal" id="fav-modal">
+    <div class="modal-box">
       <div class="modal-label">Name for this favorite</div>
       <input id="fav-name-input" type="text" placeholder="e.g. Airhorn, L + ratio…" />
-      <div id="fav-modal-row">
-        <button id="fav-save-ok">Save</button>
-        <button id="fav-save-cancel">Cancel</button>
+      <div class="modal-row">
+        <button id="fav-save-ok" class="lc-btn modal-ok">Save</button>
+        <button id="fav-save-cancel" class="modal-cancel">Cancel</button>
       </div>
     </div>
   </div>
