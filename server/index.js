@@ -7,6 +7,8 @@ const fs = require('fs');
 const { createRouter } = require('./router');
 const { resolveMedia } = require('./resolveMedia');
 const { checkSendAuth } = require('./sendAuth');
+const db = require('./db');
+const economy = require('./economy');
 
 const app = express();
 app.use(express.json());
@@ -45,6 +47,24 @@ io.on('connection', (socket) => {
     console.log(`[socket] ${discordUsername} enregistré (${socket.id})`);
   });
 
+  // Reaction relay: receiver fires an emoji back at whoever dropped on them.
+  // Credits the dropper +5 Clout the first time each unique reactor reacts to a drop.
+  socket.on('react', async ({ from, to, dropId, emoji }) => {
+    if (!to || !emoji) return;
+    let res = { credited: false, clout: null, rank: null };
+    try {
+      res = await economy.creditReaction(dropId, from, to);
+    } catch (e) {
+      console.error('[socket] react error:', e.message);
+    }
+    io.sockets.sockets.forEach((s) => {
+      if (s.discordUsername === to) {
+        s.emit('reaction', { from, emoji });
+        if (res.credited) s.emit('clout-update', { clout: res.clout, rank: res.rank });
+      }
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log(`[socket] ${socket.discordUsername || socket.id} déconnecté`);
   });
@@ -60,6 +80,28 @@ app.get('/api/users', (_req, res) => {
     if (socket.discordUsername) users.push(socket.discordUsername);
   });
   res.json({ users });
+});
+
+// Clout economy: player state (auto-creates the player).
+app.get('/api/player', async (req, res) => {
+  const username = req.query.username;
+  if (!username) return res.status(400).json({ error: 'username requis' });
+  const p = await economy.getPlayer(username);
+  res.json({
+    username: p.username,
+    clout: p.clout,
+    totalEarned: p.total_earned,
+    rank: economy.rankFor(p.total_earned),
+    unlocks: p.unlocks,
+  });
+});
+
+// Clout economy: spend Clout to unlock an effect/size.
+app.post('/api/unlock', async (req, res) => {
+  const { username, itemId } = req.body || {};
+  if (!username || !itemId) return res.status(400).json({ error: 'username et itemId requis' });
+  const result = await economy.unlockItem(username, itemId);
+  res.json(result);
 });
 
 // Upload media direct depuis l'overlay app (images, GIFs, vidéos)
@@ -98,7 +140,7 @@ app.post('/api/send-auth', (req, res) => {
 // API drop directe (depuis l'overlay app OU la page mobile, sans passer par Discord)
 app.post('/api/drop', async (req, res) => {
   const { media, mediaUrl, audio, effects, target, caption, positionX, positionY,
-          loop, loopDuration, loopTimes, trimStart, trimEnd, size } = req.body;
+          loop, loopDuration, loopTimes, trimStart, trimEnd, size, from } = req.body;
 
   // La page mobile envoie une URL brute (mediaUrl) ; on la résout côté serveur.
   // L'app desktop envoie déjà un objet `media` résolu → on n'y touche pas.
@@ -110,10 +152,26 @@ app.post('/api/drop', async (req, res) => {
 
   if (!resolved && !audio) return res.status(400).json({ error: 'media ou audio requis' });
 
+  // Economy: if `from` is present, run accounting (strip/downgrade + debit/credit).
+  // NEVER block the drop on economy — fall back to the original effects/size.
+  const dropId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  let outEffects = effects || [];
+  let outSize = size || 'm';
+  let r = null;
+  if (from) {
+    try {
+      r = await economy.applyDrop(from, effects || [], size || 'm');
+      outEffects = r.effects;
+      outSize = r.size;
+    } catch (e) {
+      console.error('[api] applyDrop error:', e.message);
+    }
+  }
+
   router.dispatch({
     media:        resolved  || null,
     audio:        audio     || null,
-    effects:      effects   || [],
+    effects:      outEffects,
     target:       target    || null,
     caption:      caption   || null,
     positionX:    positionX ?? null,
@@ -123,11 +181,13 @@ app.post('/api/drop', async (req, res) => {
     loopTimes:    loopTimes || null,
     trimStart:    trimStart ?? null,
     trimEnd:      trimEnd ?? null,
-    size:         size      || 'm',
+    size:         outSize,
+    from:         from      || null,
+    dropId,
   });
 
   console.log(`[api] drop reçu:`, JSON.stringify(req.body));
-  res.json({ ok: true });
+  res.json({ ok: true, clout: r?.clout ?? null, rank: r?.rank ?? null });
 });
 
 // Upload audio direct depuis l'overlay app
@@ -152,6 +212,15 @@ app.post('/api/upload-audio', express.raw({ type: 'audio/*', limit: '10mb' }), (
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`[server] écoute sur le port ${PORT}`);
+
+  // Init economy DB (no-op when DATABASE_URL is unset).
+  db.init()
+    .then((ok) => {
+      console.log(`[economy] ${ok ? 'enabled (Postgres ready)' : 'disabled (no DATABASE_URL)'}`);
+    })
+    .catch((e) => {
+      console.error('[economy] init failed, economy degraded:', e.message);
+    });
 
   // Start bot if available
   try {

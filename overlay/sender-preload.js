@@ -27,4 +27,7 @@ contextBridge.exposeInMainWorld('sender', {
   onUpdateStatus: (cb)               => ipcRenderer.on('update-status', (_e, msg) => cb(msg)),
   onShowTab:      (cb)               => ipcRenderer.on('show-tab',      (_e, tab) => cb(tab)),
   onSnipResult:   (cb)               => ipcRenderer.on('snip-result',   (_e, d)   => cb(d)),
+  getPlayer:      ()                 => ipcRenderer.invoke('get-player'),
+  unlockItem:     (itemId)           => ipcRenderer.invoke('unlock-item', itemId),
+  onCloutUpdate:  (cb)               => ipcRenderer.on('clout-update',   (_e, d)   => cb(d)),
 });

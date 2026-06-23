@@ -13,6 +13,16 @@ let selectedAnchor = 'center';
 let selectedSize   = 'm';
 let pendingSaveFav = null;
 
+// ── Clout economy (client mirror of server costs, for display only) ─────────────
+const UNLOCK_COSTS = {
+  spin: 0, fade: 0, drop: 50, slide: 50, zoom: 80, flip: 80, glitch: 150,
+  shake: 50, pulse: 50, wobble: 80, 'spin-loop': 80, rainbow: 120, float: 50,
+  slam: 200, flash: 120, glow: 120,
+  'size-s': 0, 'size-m': 0, 'size-l': 100, 'size-xl': 250,
+};
+let myUnlocks    = ['spin', 'fade', 'size-s', 'size-m'];
+let cloutEnabled = false;   // true once the server returns a real player (economy on)
+
 // Anchor → overlay positionX/positionY mapping
 const ANCHOR_MAP = {
   'top-left':     { positionX: 15, positionY: 15 },
@@ -205,6 +215,62 @@ window.sender.getSettings().then(s => {
   setSize(s.dropSize || 'm', false);
 });
 loadUsers();
+loadPlayer();
+if (window.sender.onCloutUpdate) {
+  window.sender.onCloutUpdate(d => { if (d && d.clout != null) updateCloutHud(d.clout, d.rank); });
+}
+
+// ── Clout economy: HUD + lock/unlock ────────────────────────────────────────────
+function updateCloutHud(clout, rank) {
+  const hud = document.getElementById('clout-hud');
+  if (clout == null) { hud.classList.add('hidden'); return; }
+  document.getElementById('clout-amount').textContent = Number(clout).toLocaleString();
+  document.getElementById('clout-rank').textContent = rank || '';
+  hud.classList.remove('hidden');
+}
+
+async function loadPlayer() {
+  let p;
+  try { p = await window.sender.getPlayer(); } catch { p = null; }
+  if (!p || p.error || p.clout == null) { cloutEnabled = false; renderEconomy(); return; }
+  cloutEnabled = true;
+  myUnlocks = p.unlocks || myUnlocks;
+  updateCloutHud(p.clout, p.rank);
+  renderEconomy();
+}
+
+// Paint locked state on effect + size chips. When economy is off, nothing locks.
+function renderEconomy() {
+  document.querySelectorAll('.chip[data-fx]').forEach(chip => {
+    const fx = chip.dataset.fx;
+    const locked = cloutEnabled && (UNLOCK_COSTS[fx] || 0) > 0 && !myUnlocks.includes(fx);
+    chip.classList.toggle('locked', locked);
+    if (locked) chip.dataset.cost = UNLOCK_COSTS[fx]; else chip.removeAttribute('data-cost');
+    if (locked && activeEffects.has(fx)) { activeEffects.delete(fx); chip.classList.remove('active'); }
+  });
+  document.querySelectorAll('.size-chip').forEach(chip => {
+    const id = 'size-' + chip.dataset.size;
+    const locked = cloutEnabled && (UNLOCK_COSTS[id] || 0) > 0 && !myUnlocks.includes(id);
+    chip.classList.toggle('locked', locked);
+  });
+}
+
+async function tryUnlock(itemId) {
+  const cost = UNLOCK_COSTS[itemId] || 0;
+  const label = itemId.startsWith('size-') ? itemId.slice(5).toUpperCase() + ' size' : itemId;
+  if (!window.confirm(`Unlock "${label}" for ${cost} 🪙 ?`)) return;
+  setStatus('Unlocking…');
+  let r;
+  try { r = await window.sender.unlockItem(itemId); } catch { r = null; }
+  if (!r || r.error) {
+    const msg = r && r.error === 'insufficient' ? 'Not enough Clout' : (r && r.error) || 'Unlock failed';
+    setStatus('✗ ' + msg, 'err'); setTimeout(() => setStatus(''), 2200); return;
+  }
+  myUnlocks = r.unlocks || myUnlocks;
+  updateCloutHud(r.clout, r.rank);
+  renderEconomy();
+  setStatus('✓ Unlocked!', 'ok'); setTimeout(() => setStatus(''), 1500);
+}
 
 // ── Users dropdown ────────────────────────────────────────────────────────────
 async function loadUsers() {
@@ -237,7 +303,10 @@ function setAnchor(anchor, persist) {
 
 // ── Size chips ────────────────────────────────────────────────────────────────
 document.querySelectorAll('.size-chip').forEach(btn => {
-  btn.addEventListener('click', () => setSize(btn.dataset.size, true));
+  btn.addEventListener('click', () => {
+    if (btn.classList.contains('locked')) { tryUnlock('size-' + btn.dataset.size); return; }
+    setSize(btn.dataset.size, true);
+  });
 });
 function setSize(size, persist) {
   selectedSize = size;
@@ -497,6 +566,7 @@ async function applyPastedUrl() {
 document.querySelectorAll('.chip').forEach(chip => {
   chip.addEventListener('click', () => {
     const fx = chip.dataset.fx;
+    if (chip.classList.contains('locked')) { tryUnlock(fx); return; }
     if (activeEffects.has(fx)) { activeEffects.delete(fx); chip.classList.remove('active'); }
     else { activeEffects.add(fx); chip.classList.add('active'); }
   });
@@ -549,6 +619,7 @@ async function send() {
     });
     if (result.ok) {
       setStatus('✓ Dropped!', 'ok');
+      if (result.clout != null) updateCloutHud(result.clout, result.rank);
       let mediaType = null;
       if (url) {
         if (/tiktok\.com/.test(url))              mediaType = 'tiktok';
@@ -825,6 +896,7 @@ async function loadSettingsForm() {
   document.getElementById('giphyApiKey').value = s.giphyApiKey || '';
   document.getElementById('tryhardMode').checked = !!s.tryhardMode;
   document.getElementById('snipHotkey').value = s.snipHotkey ?? 'CommandOrControl+Shift+S';
+  document.getElementById('reactHotkey').value = s.reactHotkey ?? 'CommandOrControl+Shift+R';
   updateRangeDisplays();
   const knownVoices = ['g-en', 'g-fr', 'sam', 'mike', 'mary'];
   document.getElementById('ttsVoice').value = knownVoices.includes(s.ttsVoice) ? s.ttsVoice : '';
@@ -842,6 +914,7 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
     tryhardMode:     document.getElementById('tryhardMode').checked,
     ttsVoice:        document.getElementById('ttsVoice').value,
     snipHotkey:      document.getElementById('snipHotkey').value,
+    reactHotkey:     document.getElementById('reactHotkey').value,
   };
   await window.sender.saveSettings(ns);
   const st = document.getElementById('settings-status');

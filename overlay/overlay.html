@@ -112,6 +112,45 @@
     .fx-glow    { animation: fx-glow 1.4s ease-in-out infinite; }
     .fx-flash   { animation: fx-flash .5s ease; }
 
+    /* ── Reactions (floating emoji, independent of the drop queue) ── */
+    .reaction-pop {
+      position: fixed;
+      top: 8%;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 99;
+      pointer-events: none;
+      text-align: center;
+      animation: reactionPop 2.5s ease forwards;
+    }
+    .reaction-emoji {
+      font-size: 120px;
+      line-height: 1;
+      filter: drop-shadow(0 4px 14px rgba(0,0,0,0.85));
+    }
+    .reaction-name {
+      display: inline-block;
+      margin-top: 6px;
+      font-family: var(--font-ui);
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--head);
+      background: rgba(7,13,21,.82);
+      box-shadow: var(--glow);
+      text-shadow: 0 0 10px rgba(28,158,255,.5);
+      padding: 4px 14px;
+      border-radius: 20px;
+    }
+    @keyframes reactionPop {
+      0%   { opacity: 0; transform: translateX(-50%) scale(0.3); }
+      14%  { opacity: 1; transform: translateX(-50%) scale(1.15); }
+      24%  { transform: translateX(-50%) scale(1); }
+      80%  { opacity: 1; transform: translateX(-50%) scale(1); }
+      100% { opacity: 0; transform: translateX(-50%) scale(1); }
+    }
+
     .drop-caption {
       font-family: var(--font-ui);
       background: rgba(7,13,21,.82);

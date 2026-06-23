@@ -38,6 +38,9 @@
       "snip.html",
       "snip.js",
       "snip-preload.js",
+      "react.html",
+      "react.js",
+      "react-preload.js",
       "sounds/**/*",
       "assets/**/*",
       "node_modules/**/*"

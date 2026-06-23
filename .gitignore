@@ -5,3 +5,4 @@ audio_cache/
 overlay/dist/
 overlay/node_modules/
 *.log
+*.err
