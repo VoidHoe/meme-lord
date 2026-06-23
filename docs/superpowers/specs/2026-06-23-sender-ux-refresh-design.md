@@ -6,8 +6,9 @@
 
 ## 1. Goal
 
-Make MemeDrop feel like a real app instead of a cramped scroll-form, and make
-getting a screenshot in effortless. Concretely:
+Make MemeDrop feel like a real app instead of a cramped scroll-form, make
+getting a screenshot in effortless, and replace the paid TTS with a free local
+one. Concretely:
 
 1. Restructure the Sender from a vertical card-stack into a **tabbed, full-canvas
    "real app" layout** (Layout B) in a larger, resizable window.
@@ -15,6 +16,8 @@ getting a screenshot in effortless. Concretely:
    save-to-disk + file-explorer + drag dance.
 3. Give all three surfaces one cohesive, **launcher-grade "Battle.net Sci-Fi"**
    look (textured/glowing dark navy + cyan, custom fonts, angular frames).
+4. Replace the paid, shared-key **ElevenLabs TTS with the free, offline Web
+   Speech API** (caption read-aloud on the overlay).
 
 ## 2. Hard constraints (do not break)
 
@@ -149,9 +152,9 @@ The one genuinely new subsystem. Build after Phase 1 ships.
 
 - Settings becomes the `#settings-view` panel (5th nav tab, gear icon), built
   from the existing settings fields (server URL, Discord pseudo, duration, SFX
-  volume, voice volume, tryhard mode, Giphy key, ElevenLabs voice, check-for-
-  updates) — reusing `get-settings` / `save-settings` unchanged. Add the new
-  **Snip hotkey** field here (wired in Phase 2).
+  volume, voice volume, tryhard mode, Giphy key, **TTS voice** (Web Speech — see
+  §8), check-for-updates) — reusing `get-settings` / `save-settings` unchanged.
+  Add the new **Snip hotkey** field here (wired in Phase 2).
 - The standalone settings window is retired. The tray "Settings" menu item now
   opens the Sender focused on the Settings tab (small `main.js` tray tweak). The
   `open-settings` channel is repurposed to "show sender + Settings tab" (or
@@ -159,7 +162,31 @@ The one genuinely new subsystem. Build after Phase 1 ships.
 - `settings.html` / `settings.js` content is migrated into the tab; the old files
   can be deleted once the tab works.
 
-## 8. Overlay — light themed touch-up
+## 8. TTS — ElevenLabs → Web Speech API (free, offline)
+
+The current TTS (`overlay.js` `speakCaption`) POSTs the caption to ElevenLabs
+using a **hardcoded API key shared across all installs** (`overlay.js:1`,
+`settings.js:1`) — so every captioned drop burns the owner's credits, and the
+key is a leaked secret in client code. Replace it with the browser-native
+`speechSynthesis` API.
+
+- **`overlay.js`**: rewrite `speakCaption(text)` to use
+  `window.speechSynthesis` — build a `SpeechSynthesisUtterance(text)`, select the
+  voice whose `name` matches `settings.ttsVoice`, set `utterance.volume` from
+  `settings.volumeVoice/100`, then `speechSynthesis.speak(...)`. Skip if
+  `ttsVoice` is unset/Off. Handle Chromium's lazy voice loading (voices may be
+  empty until the `voiceschanged` event — cache them on first load).
+- **Settings tab**: replace the ElevenLabs voice `<select>` with one populated
+  from `speechSynthesis.getVoices()` filtered to French + English, plus a
+  leading **"🔇 Off"** option. Persist the chosen voice **name** as the new
+  setting `ttsVoice`.
+- **Remove** the hardcoded `ELEVENLABS_KEY` constant and `loadElevenLabsVoices()`
+  from both `overlay.js` and `settings.js`. No network calls, no key.
+- **Settings default**: `ttsVoice: ''` (Off). Old `elevenLabsVoiceId` is ignored
+  (no migration needed; harmless leftover key in the store).
+- Lives in **Phase 1** (it touches the same Settings-tab + overlay work).
+
+## 9. Overlay — light themed touch-up
 
 - Import `theme.css`. Re-skin the **caption** typography (Rajdhani, subtle cyan
   glow) and give incoming drops an optional **angular glow frame + entrance**
@@ -167,15 +194,16 @@ The one genuinely new subsystem. Build after Phase 1 ships.
 - Constraint: never obscure or letterbox the actual meme; the frame is a thin
   accent only. Tryhard-mode small-corner behavior is unchanged.
 
-## 9. Phasing
+## 10. Phasing
 
 - **Phase 1 (ship first):** `theme.css` + bundled fonts; Sender Layout B
   (window resize, top-bar tabs, Compose stage + dock + advanced strip);
-  Settings-as-tab; clipboard paste; overlay touch-up. Big visible win, no new
-  windows, all contracts preserved.
+  Settings-as-tab; clipboard paste; **Web Speech TTS swap (+ ElevenLabs key
+  removal)**; overlay touch-up. Big visible win, no new windows, all contracts
+  preserved.
 - **Phase 2:** snip hotkey + region selector window + Settings hotkey field.
 
-## 10. Acceptance criteria
+## 11. Acceptance criteria
 
 **Phase 1**
 - Sender opens as a larger, resizable window with a launcher-style top bar and
@@ -187,6 +215,9 @@ The one genuinely new subsystem. Build after Phase 1 ships.
   before (verified against the send-object fields).
 - Library save/load, GIF search, history re-send, favorites all still work.
 - Settings tab saves/loads via the existing IPC; overlay reflects setting changes.
+- A captioned drop is read aloud via Web Speech using the selected OS voice; with
+  TTS set to **Off** nothing is spoken; **no** ElevenLabs key remains anywhere in
+  the codebase and no network TTS call is made.
 - All three surfaces visibly share the Battle.net Sci-Fi look; fonts render with
   no network access.
 
@@ -195,8 +226,10 @@ The one genuinely new subsystem. Build after Phase 1 ships.
   ready to send, without touching the filesystem manually.
 - Esc cancels the snip cleanly; the hotkey is configurable in Settings.
 
-## 11. Out of scope
+## 12. Out of scope
 
 - Mobile `/send` page (untouched).
-- Server / Discord bot logic, media resolution, SFX, TTS.
+- Server / Discord bot logic, media resolution, SFX.
+- Voice-message playback (uploaded audio) — unchanged; only caption read-aloud
+  TTS changes.
 - Any change to the drop payload schema or socket protocol.
