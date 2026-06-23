@@ -8,14 +8,18 @@ let settings  = { positionX: 50, positionY: 50, duration: 5000, volumeSfx: 80, v
 // Warm up the Web Speech voice list so Chromium has it ready before the first drop.
 try { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices(); } catch {}
 
-// Width + height caps per size. Bigger sizes use viewport units so they
-// scale with the screen — XL takes a big portion of the display.
-const SIZE_MAP = {
-  s:  { w: '220px', h: '200px' },
-  m:  { w: '340px', h: '300px' },
-  l:  { w: '560px', h: '460px' },
-  xl: { w: '82vw',  h: '82vh'  },
-};
+// Target box per size — media is scaled to FILL this box (small media upscaled,
+// big media shrunk) so every drop lands at a consistent on-screen size.
+function sizeBox(size) {
+  const W = window.innerWidth, H = window.innerHeight;
+  switch (size) {
+    case 's':  return [240, 220];
+    case 'l':  return [620, 520];
+    case 'xl': return [Math.round(W * 0.82), Math.round(H * 0.82)];
+    case 'm':
+    default:   return [380, 340];
+  }
+}
 
 window.memedrop.getSettings().then(s => { settings = s; applyPosition(); });
 window.memedrop.onSettingsChanged(s => { settings = s; applyPosition(); });
@@ -26,15 +30,78 @@ window.memedrop.onDrop(event => {
   if (!isPlaying) processQueue();
 });
 
-// Scale images/videos by the chosen size. Embeds (iframes) keep their fixed
-// dimensions so small sizes don't distort TikTok/YouTube/Twitter players.
+// Normalize the rendered size: scale media to fill its box on the dominant axis,
+// keeping aspect ratio (small media is upscaled). Runs after the media has loaded
+// so natural dimensions are known. Embeds (iframes) keep their fixed dimensions.
 function applySize(mediaEl, size) {
-  const sz = SIZE_MAP[size] || SIZE_MAP.m;
-  if (mediaEl.tagName === 'IMG' || mediaEl.tagName === 'VIDEO') {
-    container.style.maxWidth = sz.w;
-    mediaEl.style.maxWidth   = '100%';
-    mediaEl.style.maxHeight  = sz.h;
+  if (mediaEl.tagName !== 'IMG' && mediaEl.tagName !== 'VIDEO') return;
+  const natW = mediaEl.tagName === 'IMG' ? mediaEl.naturalWidth  : mediaEl.videoWidth;
+  const natH = mediaEl.tagName === 'IMG' ? mediaEl.naturalHeight : mediaEl.videoHeight;
+  const [bw, bh] = sizeBox(size);
+  if (!natW || !natH) {            // dims unknown → cap only, never upscale blindly
+    container.style.maxWidth = bw + 'px';
+    mediaEl.style.maxWidth  = '100%';
+    mediaEl.style.maxHeight = bh + 'px';
+    return;
   }
+  const scale = Math.min(bw / natW, bh / natH);   // contain; upscales when smaller than the box
+  const w = Math.round(natW * scale), h = Math.round(natH * scale);
+  mediaEl.style.width     = w + 'px';
+  mediaEl.style.height    = h + 'px';
+  mediaEl.style.maxWidth  = 'none';
+  mediaEl.style.maxHeight = 'none';
+  container.style.maxWidth = w + 'px';
+}
+
+// ── Loudness normalization (Web Audio) ─────────────────────────────────────────
+// Route audio through a compressor + makeup gain so quiet clips get louder and
+// loud ones get tamed. Web Audio would SILENCE cross-origin media that isn't
+// CORS-enabled, so we only route media that passes a CORS pre-flight; anything
+// else falls back to plain playback (audible, just not evened out).
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+const _normalized = new WeakSet();
+function normalizeChain(el, baseVolume) {
+  const ctx = getAudioCtx();
+  if (!ctx || _normalized.has(el)) { el.volume = baseVolume; return false; }
+  try {
+    const src  = ctx.createMediaElementSource(el);
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -26; comp.knee.value = 24; comp.ratio.value = 12;
+    comp.attack.value = 0.004; comp.release.value = 0.25;
+    const gain = ctx.createGain();
+    gain.gain.value = Math.max(0, baseVolume) * 1.9;   // makeup gain, scaled by the user's volume
+    src.connect(comp); comp.connect(gain); gain.connect(ctx.destination);
+    _normalized.add(el);
+    el._anodes = [src, comp, gain];   // kept so we can disconnect on cleanup
+    el.volume = 1;   // master level is handled by the gain node now
+    return true;
+  } catch {
+    el.volume = baseVolume;
+    return false;
+  }
+}
+async function corsAllowed(url) {
+  try {
+    const r = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' }, mode: 'cors' });
+    try { r.body && r.body.cancel(); } catch {}
+    return r.ok || r.status === 206 || r.status === 200;
+  } catch { return false; }
+}
+// Set the video source (CORS-tagged when allowed) and wire up normalization.
+async function setupVideoAudio(video) {
+  const url = video.dataset.src;
+  const baseVol = (settings.volumeSfx || 80) / 100;
+  let cors = false;
+  try { cors = await corsAllowed(url); } catch {}
+  if (cors) video.crossOrigin = 'anonymous';   // must be set before load to tag the resource
+  video.src = url;
+  if (cors && normalizeChain(video, baseVol)) return;
+  video.volume = baseVol;
 }
 
 function applyPosition(overrideX, overrideY) {
@@ -91,9 +158,10 @@ async function processQueue() {
     mediaEl = buildMediaElement(event.media, event.loop);
     if (mediaEl) {
       if (hasSpin) mediaEl.classList.add('fx-spin');
-      applySize(mediaEl, dropSize);
+      if (mediaEl.tagName === 'VIDEO' && mediaEl.dataset.src) await setupVideoAudio(mediaEl);
       container.appendChild(mediaEl);
       await waitForMedia(mediaEl);
+      applySize(mediaEl, dropSize);   // normalize size once natural dims are known
     }
   }
 
@@ -160,7 +228,11 @@ async function processQueue() {
   container.style.display   = 'none';
   container.style.animation = '';
   const vid = container.querySelector('video');
-  if (vid) { vid.pause(); vid.src = ''; }
+  if (vid) {
+    vid.pause();
+    if (vid._anodes) { vid._anodes.forEach(n => { try { n.disconnect(); } catch {} }); vid._anodes = null; }
+    vid.src = '';
+  }
   container.innerHTML       = '';
   await sleep(200);
   processQueue();
@@ -190,11 +262,10 @@ function buildMediaElement(media, loop) {
     }
     case 'video': {
       const video = document.createElement('video');
-      video.src       = media.url;
+      video.dataset.src = media.url;   // src is set in setupVideoAudio (after the CORS check)
       video.autoplay  = true;
       video.loop      = false;  // looping is controlled manually in playVideoSegment
       video.muted     = false;
-      video.volume    = (settings.volumeSfx || 80) / 100;
       video.playsInline = true;
       return video;
     }
@@ -265,11 +336,11 @@ function playVideoSegment(video, start, end, times) {
 
 function playAudio(audio) {
   return new Promise((resolve) => {
-    const done = (a) => { a.src = ''; resolve(); };
+    const done = (a) => { if (a._anodes) { a._anodes.forEach(n => { try { n.disconnect(); } catch {} }); a._anodes = null; } a.src = ''; resolve(); };
     if (audio.type === 'sfx') {
       const name = audio.url.replace('sfx:', '');
       const a = new Audio(`sounds/${name}.mp3`);
-      a.volume  = (settings.volumeSfx || 80) / 100;
+      if (!normalizeChain(a, (settings.volumeSfx || 80) / 100)) a.volume = (settings.volumeSfx || 80) / 100;
       a.onended = () => done(a);
       a.onerror = () => done(a);
       a.play().catch(() => done(a));
