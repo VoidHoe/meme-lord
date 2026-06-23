@@ -12,6 +12,7 @@ const store = new Store({
     positionX: 50,
     positionY: 50,
     duration: 5000,
+    masterVolume: 100,
     volumeSfx: 80,
     volumeVoice: 100,
     effects: true,

@@ -800,7 +800,7 @@ document.getElementById('lib-name-input').addEventListener('keydown', (e) => {
 });
 
 // ── Settings tab ──────────────────────────────────────────────────────────────
-const SET_RANGES = [['duration', 'durationVal'], ['volumeSfx', 'volumeSfxVal'], ['volumeVoice', 'volumeVoiceVal']];
+const SET_RANGES = [['duration', 'durationVal'], ['masterVolume', 'masterVolumeVal'], ['volumeSfx', 'volumeSfxVal'], ['volumeVoice', 'volumeVoiceVal']];
 SET_RANGES.forEach(([key, disp]) => {
   const input = document.getElementById(key);
   const out   = document.getElementById(disp);
@@ -837,6 +837,7 @@ async function loadSettingsForm() {
   document.getElementById('serverUrl').value = s.serverUrl || '';
   document.getElementById('discordUsername').value = s.discordUsername || '';
   document.getElementById('duration').value = Math.round((s.duration || 5000) / 1000);
+  document.getElementById('masterVolume').value = s.masterVolume ?? 100;
   document.getElementById('volumeSfx').value = s.volumeSfx ?? 80;
   document.getElementById('volumeVoice').value = s.volumeVoice ?? 100;
   document.getElementById('giphyApiKey').value = s.giphyApiKey || '';
@@ -851,6 +852,7 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
     serverUrl:       document.getElementById('serverUrl').value,
     discordUsername: document.getElementById('discordUsername').value,
     duration:        Number(document.getElementById('duration').value) * 1000,
+    masterVolume:    Number(document.getElementById('masterVolume').value),
     volumeSfx:       Number(document.getElementById('volumeSfx').value),
     volumeVoice:     Number(document.getElementById('volumeVoice').value),
     giphyApiKey:     document.getElementById('giphyApiKey').value,

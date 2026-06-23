@@ -383,11 +383,16 @@
           <div class="range-row"><input type="range" id="duration" min="1" max="10" step="1"><span class="range-value"><span id="durationVal">5</span>s</span></div>
         </div>
         <div class="set-field">
-          <label>SFX volume</label>
+          <label>🔊 Drop volume (master)</label>
+          <div class="range-row"><input type="range" id="masterVolume" min="0" max="100" step="5"><span class="range-value" id="masterVolumeVal">100</span></div>
+          <div class="set-hint">Overall loudness of every incoming drop. Scales the two below.</div>
+        </div>
+        <div class="set-field">
+          <label>🎬 Media / SFX volume</label>
           <div class="range-row"><input type="range" id="volumeSfx" min="0" max="100" step="5"><span class="range-value" id="volumeSfxVal">80</span></div>
         </div>
         <div class="set-field">
-          <label>Voice volume</label>
+          <label>🗣️ Voice / TTS volume</label>
           <div class="range-row"><input type="range" id="volumeVoice" min="0" max="100" step="5"><span class="range-value" id="volumeVoiceVal">100</span></div>
         </div>
         <div class="set-field">

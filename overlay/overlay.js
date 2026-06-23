@@ -58,6 +58,9 @@ function applySize(mediaEl, size) {
 // loud ones get tamed. Web Audio would SILENCE cross-origin media that isn't
 // CORS-enabled, so we only route media that passes a CORS pre-flight; anything
 // else falls back to plain playback (audible, just not evened out).
+// Master volume — one knob that scales every audio path (video, SFX, voice, TTS).
+function master() { return (settings.masterVolume ?? 100) / 100; }
+
 let audioCtx = null;
 function getAudioCtx() {
   if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
@@ -95,7 +98,7 @@ async function corsAllowed(url) {
 // Set the video source (CORS-tagged when allowed) and wire up normalization.
 async function setupVideoAudio(video) {
   const url = video.dataset.src;
-  const baseVol = (settings.volumeSfx || 80) / 100;
+  const baseVol = (settings.volumeSfx || 80) / 100 * master();
   let cors = false;
   try { cors = await corsAllowed(url); } catch {}
   if (cors) video.crossOrigin = 'anonymous';   // must be set before load to tag the resource
@@ -244,7 +247,7 @@ function speakCaption(text) {
     const u = new SpeechSynthesisUtterance(text);
     const voice = window.speechSynthesis.getVoices().find(v => v.name === settings.ttsVoice);
     if (voice) { u.voice = voice; u.lang = voice.lang; }
-    u.volume = (settings.volumeVoice || 100) / 100;
+    u.volume = Math.min(1, (settings.volumeVoice || 100) / 100 * master());
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(u);
   } catch (e) {
@@ -340,7 +343,8 @@ function playAudio(audio) {
     if (audio.type === 'sfx') {
       const name = audio.url.replace('sfx:', '');
       const a = new Audio(`sounds/${name}.mp3`);
-      if (!normalizeChain(a, (settings.volumeSfx || 80) / 100)) a.volume = (settings.volumeSfx || 80) / 100;
+      const sfxVol = (settings.volumeSfx || 80) / 100 * master();
+      if (!normalizeChain(a, sfxVol)) a.volume = sfxVol;
       a.onended = () => done(a);
       a.onerror = () => done(a);
       a.play().catch(() => done(a));
@@ -348,7 +352,7 @@ function playAudio(audio) {
     }
     if (audio.type === 'voice' && audio.url) {
       const a = new Audio(audio.url);
-      a.volume  = (settings.volumeVoice || 100) / 100;
+      a.volume  = Math.min(1, (settings.volumeVoice || 100) / 100 * master());
       a.onended = () => done(a);
       a.onerror = () => done(a);
       a.play().catch(() => done(a));
