@@ -21,6 +21,14 @@ function sizeBox(size) {
   }
 }
 
+// Effects, grouped by what they animate so they can stack without conflict:
+//  ENTRANCE — one-shot transform, runs on the entrance wrapper at reveal
+//  EMPHASIS — looping transform, runs on the emphasis wrapper the whole time
+//  FILTER   — looping/one-shot CSS filter, runs on the media element itself
+const FX_ENTRANCE = ['spin', 'drop', 'slide', 'zoom', 'flip', 'glitch', 'slam'];
+const FX_EMPHASIS = ['shake', 'pulse', 'wobble', 'spin-loop', 'float'];
+const FX_FILTER   = ['rainbow', 'glow', 'flash'];
+
 window.memedrop.getSettings().then(s => { settings = s; applyPosition(); });
 window.memedrop.onSettingsChanged(s => { settings = s; applyPosition(); });
 
@@ -153,16 +161,26 @@ async function processQueue() {
   container.style.maxWidth  = '';
   container.style.maxHeight = '';
 
-  const hasFade = (event.effects || []).includes('fade');
-  const hasSpin = (event.effects || []).includes('spin');
+  const fxList  = event.effects || [];
+  const hasFade = fxList.includes('fade');
 
   let mediaEl = null;
+  let entranceLayer = null;   // receives the one-shot entrance transform at reveal time
   if (event.media) {
     mediaEl = buildMediaElement(event.media, event.loop);
     if (mediaEl) {
-      if (hasSpin) mediaEl.classList.add('fx-spin');
       if (mediaEl.tagName === 'VIDEO' && mediaEl.dataset.src) await setupVideoAudio(mediaEl);
-      container.appendChild(mediaEl);
+      // Layered wrappers so a looping emphasis transform and a one-shot entrance
+      // transform can run together without fighting over `transform`.
+      entranceLayer = document.createElement('div'); entranceLayer.className = 'fx-layer';
+      const emphasisLayer = document.createElement('div'); emphasisLayer.className = 'fx-layer';
+      entranceLayer.appendChild(mediaEl);
+      emphasisLayer.appendChild(entranceLayer);
+      fxList.forEach(name => {
+        if (FX_EMPHASIS.includes(name))    emphasisLayer.classList.add('fx-' + name);
+        else if (FX_FILTER.includes(name)) mediaEl.classList.add('fx-' + name);
+      });
+      container.appendChild(emphasisLayer);
       await waitForMedia(mediaEl);
       applySize(mediaEl, dropSize);   // normalize size once natural dims are known
     }
@@ -178,7 +196,8 @@ async function processQueue() {
 
   applyPosition(dropX, dropY);
 
-  // Fade in
+  // Entrance effects + fade — applied on reveal so the animation reads cleanly.
+  if (entranceLayer) fxList.forEach(name => { if (FX_ENTRANCE.includes(name)) entranceLayer.classList.add('fx-' + name); });
   if (hasFade) {
     container.style.animation = 'fadeIn 3s ease forwards';
   }

@@ -132,7 +132,7 @@
     #refresh-btn:hover { color: var(--accent-bright); border-color: var(--accent); }
     @keyframes spinAnim { to { transform: rotate(360deg); } }
     #refresh-btn.spinning { animation: spinAnim .5s linear; }
-    .chips { display: flex; gap: 8px; }
+    .chips { display: flex; gap: 7px; flex-wrap: wrap; }
     .chip {
       padding: 6px 13px; border: 1px solid var(--line); background: rgba(6,20,34,.6); color: var(--muted);
       font-size: 12px; font-weight: 700; letter-spacing: .5px; cursor: pointer; transition: all .15s; clip-path: var(--cut-sm);
@@ -301,6 +301,20 @@
             <div class="adv-row chips">
               <div class="chip" data-fx="spin">✦ spin</div>
               <div class="chip" data-fx="fade">◌ fade</div>
+              <div class="chip" data-fx="drop">⬇ drop</div>
+              <div class="chip" data-fx="slide">➡ slide</div>
+              <div class="chip" data-fx="zoom">🔍 zoom</div>
+              <div class="chip" data-fx="flip">🔄 flip</div>
+              <div class="chip" data-fx="glitch">📺 glitch</div>
+              <div class="chip" data-fx="shake">💢 shake</div>
+              <div class="chip" data-fx="pulse">💗 pulse</div>
+              <div class="chip" data-fx="wobble">〰️ wobble</div>
+              <div class="chip" data-fx="spin-loop">💿 spin loop</div>
+              <div class="chip" data-fx="rainbow">🌈 rainbow</div>
+              <div class="chip" data-fx="float">🎈 float</div>
+              <div class="chip" data-fx="slam">💥 slam</div>
+              <div class="chip" data-fx="flash">⚡ flash</div>
+              <div class="chip" data-fx="glow">🔷 glow</div>
             </div>
             <div id="trim-row" class="trim disabled">
               <div id="trim-empty">load a video to trim</div>
