@@ -426,9 +426,20 @@
           <div class="set-hint">Press it anywhere → drag a box → the snip drops straight into Compose.</div>
         </div>
         <div class="set-field">
-          <label>🎙️ Caption voice (free, offline)</label>
-          <select id="ttsVoice" class="lc-field"><option value="">🔇 Off</option></select>
-          <div class="set-hint" id="ttsHint">Reads captions aloud using your system voices. No API, no cost.</div>
+          <label>🎙️ Caption voice (free, no key)</label>
+          <select id="ttsVoice" class="lc-field">
+            <option value="">🔇 Off</option>
+            <optgroup label="Natural (Google)">
+              <option value="g-en">🎙️ English</option>
+              <option value="g-fr">🎙️ Français</option>
+            </optgroup>
+            <optgroup label="Meme robot (Microsoft SAPI4)">
+              <option value="sam">🤖 Microsoft Sam</option>
+              <option value="mike">🤖 Mike</option>
+              <option value="mary">🤖 Mary</option>
+            </optgroup>
+          </select>
+          <div class="set-hint">Reads captions aloud when a drop has one. Google = natural, Sam = classic meme robot.</div>
         </div>
         <div class="set-field">
           <label>🎞️ Giphy API key (for GIF search)</label>

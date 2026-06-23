@@ -46,6 +46,17 @@ let tray             = null;
 let socketClient     = null;
 let overlayRaiseTimer = null;
 
+// Only allow one MemeDrop at a time. Two instances (e.g. the installed app plus
+// a dev build) would each receive every drop and play its audio/TTS twice.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (senderWindow && !senderWindow.isDestroyed()) senderWindow.focus();
+    else createSenderWindow();
+  });
+}
+
 // ── Fenêtres ──────────────────────────────────────────────────────────────────
 
 function createOverlayWindow() {
@@ -557,6 +568,22 @@ ipcMain.handle('search-gifs', async (_e, query) => {
     const url = `https://api.giphy.com/v1/gifs/search?q=${encodeURIComponent(query)}&api_key=${apiKey}&limit=12&rating=g`;
     const res  = await fetch(url);
     return res.json();
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// Fetch TTS audio (Google Translate / tetyys SAPI4) with a browser UA and return
+// it as a data URL the overlay can play. Free, no key.
+ipcMain.handle('tts-fetch', async (_e, url) => {
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' },
+    });
+    if (!res.ok) return { error: `tts ${res.status}` };
+    const buf  = Buffer.from(await res.arrayBuffer());
+    const type = res.headers.get('content-type') || 'audio/mpeg';
+    return { dataUrl: `data:${type};base64,${buf.toString('base64')}` };
   } catch (err) {
     return { error: err.message };
   }

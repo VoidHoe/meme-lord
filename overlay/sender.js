@@ -814,24 +814,6 @@ function updateRangeDisplays() {
   });
 }
 
-function populateTtsVoices(selected) {
-  const sel = document.getElementById('ttsVoice');
-  let voices = [];
-  try { voices = window.speechSynthesis.getVoices().filter(v => /^(fr|en)/i.test(v.lang)); } catch {}
-  sel.innerHTML = '<option value="">🔇 Off</option>';
-  voices.forEach(v => {
-    const o = document.createElement('option');
-    o.value = v.name; o.textContent = `${v.name} (${v.lang})`;
-    sel.appendChild(o);
-  });
-  if (selected) sel.value = selected;
-  const hint = document.getElementById('ttsHint');
-  if (hint) hint.textContent = voices.length
-    ? 'Reads captions aloud using your system voices. No API, no cost.'
-    : 'No system voices found — captions will be silent.';
-}
-try { window.speechSynthesis.onvoiceschanged = () => { if (isPanelActive('settings')) populateTtsVoices(document.getElementById('ttsVoice').value); }; } catch {}
-
 async function loadSettingsForm() {
   const s = await window.sender.getSettings();
   document.getElementById('serverUrl').value = s.serverUrl || '';
@@ -844,7 +826,8 @@ async function loadSettingsForm() {
   document.getElementById('tryhardMode').checked = !!s.tryhardMode;
   document.getElementById('snipHotkey').value = s.snipHotkey ?? 'CommandOrControl+Shift+S';
   updateRangeDisplays();
-  populateTtsVoices(s.ttsVoice || '');
+  const knownVoices = ['g-en', 'g-fr', 'sam', 'mike', 'mary'];
+  document.getElementById('ttsVoice').value = knownVoices.includes(s.ttsVoice) ? s.ttsVoice : '';
 }
 
 document.getElementById('settings-save-btn').addEventListener('click', async () => {

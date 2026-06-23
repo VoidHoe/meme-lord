@@ -5,8 +5,6 @@ let queue     = [];
 let isPlaying = false;
 let settings  = { positionX: 50, positionY: 50, duration: 5000, volumeSfx: 80, volumeVoice: 100 };
 
-// Warm up the Web Speech voice list so Chromium has it ready before the first drop.
-try { window.speechSynthesis.getVoices(); window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices(); } catch {}
 
 // Target box per size — media is scaled to FILL this box (small media upscaled,
 // big media shrunk) so every drop lands at a consistent on-screen size.
@@ -260,15 +258,31 @@ async function processQueue() {
   processQueue();
 }
 
-function speakCaption(text) {
+// Build the TTS request URL for the chosen voice. Free, no API key.
+function ttsUrl(voice, text) {
+  const t = encodeURIComponent(text.slice(0, 200));
+  switch (voice) {
+    case 'g-en': return `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q=${t}`;
+    case 'g-fr': return `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=fr&q=${t}`;
+    case 'sam':  return `https://www.tetyys.com/SAPI4/SAPI4?text=${t}&voice=Sam&pitch=140&speed=150`;
+    case 'mary': return `https://www.tetyys.com/SAPI4/SAPI4?text=${t}&voice=Mary&pitch=169&speed=170`;
+    case 'mike': return `https://www.tetyys.com/SAPI4/SAPI4?text=${t}&voice=Mike&pitch=140&speed=150`;
+    default:     return null;
+  }
+}
+
+// Speak the caption. Main fetches the audio (sets a browser UA, dodges CORS) and
+// hands back a data URL we just play.
+async function speakCaption(text) {
   if (!text || !settings.ttsVoice) return;
+  const url = ttsUrl(settings.ttsVoice, text);
+  if (!url) return;
   try {
-    const u = new SpeechSynthesisUtterance(text);
-    const voice = window.speechSynthesis.getVoices().find(v => v.name === settings.ttsVoice);
-    if (voice) { u.voice = voice; u.lang = voice.lang; }
-    u.volume = Math.min(1, (settings.volumeVoice || 100) / 100 * master());
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(u);
+    const r = await window.memedrop.ttsFetch(url);
+    if (!r || r.error || !r.dataUrl) throw new Error(r && r.error || 'tts failed');
+    const a = new Audio(r.dataUrl);
+    a.volume = Math.min(1, (settings.volumeVoice || 100) / 100 * master());
+    a.play().catch(() => {});
   } catch (e) {
     console.warn('[TTS]', e);
   }
