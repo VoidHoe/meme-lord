@@ -79,6 +79,20 @@ function showTab(name) {
 tabBtns.forEach(t => t.addEventListener('click', () => showTab(t.dataset.tab)));
 if (window.sender.onShowTab) window.sender.onShowTab(tab => showTab(tab));
 
+// A snip arrived from the region selector (Phase 2 global hotkey) → load it.
+if (window.sender.onSnipResult) {
+  window.sender.onSnipResult((d) => {
+    showTab('compose');
+    if (d && d.url) {
+      setMediaUrl(d.url, '📸 Snip', false);
+      setStatus('✓ Snip ready — caption & send', 'ok');
+      setTimeout(() => setStatus(''), 1800);
+    } else {
+      setStatus('Snip failed: ' + ((d && d.error) || 'unknown'), 'err');
+    }
+  });
+}
+
 // ── Window controls ───────────────────────────────────────────────────────────
 document.getElementById('close-btn').addEventListener('click', () => window.sender.close());
 document.getElementById('min-btn').addEventListener('click', () => window.sender.minimize());
@@ -827,6 +841,7 @@ async function loadSettingsForm() {
   document.getElementById('volumeVoice').value = s.volumeVoice ?? 100;
   document.getElementById('giphyApiKey').value = s.giphyApiKey || '';
   document.getElementById('tryhardMode').checked = !!s.tryhardMode;
+  document.getElementById('snipHotkey').value = s.snipHotkey ?? 'CommandOrControl+Shift+S';
   updateRangeDisplays();
   populateTtsVoices(s.ttsVoice || '');
 }
@@ -841,6 +856,7 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
     giphyApiKey:     document.getElementById('giphyApiKey').value,
     tryhardMode:     document.getElementById('tryhardMode').checked,
     ttsVoice:        document.getElementById('ttsVoice').value,
+    snipHotkey:      document.getElementById('snipHotkey').value,
   };
   await window.sender.saveSettings(ns);
   const st = document.getElementById('settings-status');

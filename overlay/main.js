@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut, session, protocol, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut, session, protocol, shell, desktopCapturer } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -23,6 +23,7 @@ const store = new Store({
     history: [],
     library: [],
     ttsVoice: '',
+    snipHotkey: 'CommandOrControl+Shift+S',
   },
 });
 
@@ -39,6 +40,7 @@ protocol.registerSchemesAsPrivileged([
 let overlayWindow    = null;
 let settingsWindow   = null;
 let senderWindow     = null;
+let snipWindow       = null;
 let tray             = null;
 let socketClient     = null;
 let overlayRaiseTimer = null;
@@ -133,17 +135,91 @@ function createSenderWindow() {
   senderWindow.on('closed', () => { senderWindow = null; });
 }
 
+// Send a message to the sender once it has finished loading (creating it if needed).
+function sendToSender(channel, payload) {
+  if (!senderWindow) return;
+  const go = () => { if (senderWindow && !senderWindow.isDestroyed()) senderWindow.webContents.send(channel, payload); };
+  if (senderWindow.webContents.isLoading()) {
+    senderWindow.webContents.once('did-finish-load', go);
+  } else {
+    go();
+  }
+}
+
 // Open (or focus) the sender on a specific tab — Settings is now a tab here.
 function openSenderTab(tab) {
   createSenderWindow();
-  if (!senderWindow) return;
-  const deliver = () => senderWindow.webContents.send('show-tab', tab);
-  if (senderWindow.webContents.isLoading()) {
-    senderWindow.webContents.once('did-finish-load', deliver);
-  } else {
-    deliver();
-  }
+  sendToSender('show-tab', tab);
 }
+
+// ── Snip (Phase 2): hotkey → freeze screen → drag a region → into Compose ──────
+
+function closeSnipWindow() {
+  if (snipWindow && !snipWindow.isDestroyed()) snipWindow.close();
+}
+
+async function captureSnip() {
+  if (snipWindow && !snipWindow.isDestroyed()) return;  // already snipping
+  const display = screen.getPrimaryDisplay();
+  const { width, height } = display.size;        // logical px
+  const scale = display.scaleFactor || 1;
+
+  let dataURL = '';
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: Math.round(width * scale), height: Math.round(height * scale) },
+    });
+    const src = sources.find(s => String(s.display_id) === String(display.id)) || sources[0];
+    if (src && src.thumbnail && !src.thumbnail.isEmpty()) dataURL = src.thumbnail.toDataURL();
+  } catch (e) {
+    console.error('[snip] capture error:', e.message);
+  }
+  if (!dataURL) { console.error('[snip] no screenshot captured'); return; }
+
+  snipWindow = new BrowserWindow({
+    x: display.bounds.x, y: display.bounds.y,
+    width, height,
+    frame: false, transparent: false, alwaysOnTop: true, skipTaskbar: true,
+    resizable: false, movable: false, hasShadow: false, enableLargerThanScreen: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'snip-preload.js'),
+      contextIsolation: true,
+    },
+  });
+  snipWindow.setAlwaysOnTop(true, 'screen-saver');
+  snipWindow.loadFile(path.join(__dirname, 'snip.html'));
+  snipWindow.webContents.once('did-finish-load', () => {
+    if (!snipWindow || snipWindow.isDestroyed()) return;
+    snipWindow.webContents.send('snip-init', { dataURL, width, height });
+    snipWindow.focus();
+  });
+  snipWindow.on('closed', () => { snipWindow = null; });
+}
+
+// Upload raw image bytes to the server and return its hosted { url }.
+async function uploadMediaBuffer(buffer, mimeType) {
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  const res = await fetch(`${serverUrl}/api/upload-media`, {
+    method: 'POST', headers: { 'Content-Type': mimeType }, body: Buffer.from(buffer),
+  });
+  return res.json();
+}
+
+ipcMain.on('snip-cancel', closeSnipWindow);
+
+ipcMain.on('snip-region', async (_e, bytes) => {
+  closeSnipWindow();
+  openSenderTab('compose');
+  try {
+    const r = await uploadMediaBuffer(bytes, 'image/png');
+    if (r.error || !r.url) throw new Error(r.error || 'upload failed');
+    sendToSender('snip-result', { url: r.url });
+  } catch (err) {
+    console.error('[snip] upload error:', err.message);
+    sendToSender('snip-result', { error: err.message });
+  }
+});
 
 // ── Socket ────────────────────────────────────────────────────────────────────
 
@@ -191,6 +267,17 @@ function registerHotkey() {
     console.log('[hotkey] sender enregistré: Ctrl+Shift+D');
   } catch (e) {
     console.error('[hotkey] sender erreur:', e.message);
+  }
+
+  // Raccourci snip de zone (par défaut Ctrl+Shift+S, configurable, vide = off)
+  const snipKey = store.get('snipHotkey');
+  if (snipKey) {
+    try {
+      globalShortcut.register(snipKey, captureSnip);
+      console.log('[hotkey] snip enregistré:', snipKey);
+    } catch (e) {
+      console.error('[hotkey] snip erreur:', e.message);
+    }
   }
 }
 

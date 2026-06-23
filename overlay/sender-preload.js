@@ -26,4 +26,5 @@ contextBridge.exposeInMainWorld('sender', {
   checkForUpdates:()                 => ipcRenderer.invoke('check-for-updates'),
   onUpdateStatus: (cb)               => ipcRenderer.on('update-status', (_e, msg) => cb(msg)),
   onShowTab:      (cb)               => ipcRenderer.on('show-tab',      (_e, tab) => cb(tab)),
+  onSnipResult:   (cb)               => ipcRenderer.on('snip-result',   (_e, d)   => cb(d)),
 });

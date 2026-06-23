@@ -396,6 +396,17 @@
         </div>
         <hr class="set-hr">
         <div class="set-field">
+          <label>📸 Snip hotkey</label>
+          <select id="snipHotkey" class="lc-field">
+            <option value="CommandOrControl+Shift+S">Ctrl + Shift + S (default)</option>
+            <option value="CommandOrControl+Shift+A">Ctrl + Shift + A</option>
+            <option value="CommandOrControl+Shift+X">Ctrl + Shift + X</option>
+            <option value="Alt+S">Alt + S</option>
+            <option value="">🚫 Off</option>
+          </select>
+          <div class="set-hint">Press it anywhere → drag a box → the snip drops straight into Compose.</div>
+        </div>
+        <div class="set-field">
           <label>🎙️ Caption voice (free, offline)</label>
           <select id="ttsVoice" class="lc-field"><option value="">🔇 Off</option></select>
           <div class="set-hint" id="ttsHint">Reads captions aloud using your system voices. No API, no cost.</div>

@@ -35,6 +35,9 @@
       "sender.html",
       "sender.js",
       "sender-preload.js",
+      "snip.html",
+      "snip.js",
+      "snip-preload.js",
       "sounds/**/*",
       "assets/**/*",
       "node_modules/**/*"
