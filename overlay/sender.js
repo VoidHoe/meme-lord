@@ -71,7 +71,7 @@ const saveClipBtn  = document.getElementById('save-clip-btn');
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
 const tabBtns = [...document.querySelectorAll('.tab')];
-const PANELS = { compose: 'compose-panel', library: 'library-panel', gif: 'gif-panel', history: 'history-panel', settings: 'settings-panel' };
+const PANELS = { compose: 'compose-panel', deck: 'deck-panel', library: 'library-panel', gif: 'gif-panel', history: 'history-panel', settings: 'settings-panel' };
 
 function isPanelActive(name) {
   return document.getElementById(PANELS[name]).classList.contains('active');
@@ -81,7 +81,8 @@ function showTab(name) {
   if (!PANELS[name]) return;
   tabBtns.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   Object.entries(PANELS).forEach(([k, id]) => document.getElementById(id).classList.toggle('active', k === name));
-  if (name === 'library')  { buildSituationFilter(); renderLibrary(); }
+  if (name === 'deck')     renderDeck();
+  if (name === 'library')  renderLibrary();
   if (name === 'history')  loadHistory();
   if (name === 'gif')      setTimeout(() => gifSearchInput.focus(), 60);
   if (name === 'settings') loadSettingsForm();
@@ -446,6 +447,18 @@ composePanel.addEventListener('drop', async (e) => {
 
 // ── Paste a screenshot / image straight into Compose ────────────────────────────
 document.addEventListener('paste', async (e) => {
+  // On the Library tab, paste a link (or video) to save it instantly — unless the
+  // caret is in a field (e.g. the search box), where paste should behave normally.
+  if (isPanelActive('library')) {
+    const tag = e.target?.tagName || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const vidItem = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('video/'));
+    const text = (e.clipboardData?.getData('text') || '').trim();
+    if (vidItem) { e.preventDefault(); const f = vidItem.getAsFile(); if (f) await saveFileToLibrary(f); return; }
+    if (text.startsWith('http')) { e.preventDefault(); await saveLinkToLibrary(text); return; }
+    return;
+  }
+
   const items = [...(e.clipboardData?.items || [])];
   const imgItem = items.find(it => it.type.startsWith('image/'));
   if (!imgItem) return;   // not an image — let text paste (caption/link) proceed
@@ -575,7 +588,7 @@ document.querySelectorAll('.chip').forEach(chip => {
 // ── Escape ──────────────────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    if (document.getElementById('lib-modal').classList.contains('open')) { closeLibModal(); }
+    if (document.getElementById('deck-modal').classList.contains('open')) { closeDeckModal(); }
     else if (document.getElementById('fav-modal').classList.contains('open')) { document.getElementById('fav-modal').classList.remove('open'); }
     else if (!isPanelActive('compose')) { showTab('compose'); }
     else window.sender.close();
@@ -737,72 +750,124 @@ function resetForm() {
 }
 
 // ── Clip library ──────────────────────────────────────────────────────────────
-const SITUATIONS = [
-  { id: 'w',          label: '🏆 W / Flex' },
-  { id: 'cooked',     label: '💀 Cooked' },
-  { id: 'clown',      label: '🤡 Clown' },
-  { id: 'aura',       label: '🥶 Aura' },
-  { id: 'disrespect', label: '😤 Disrespect' },
-  { id: 'copium',     label: '😭 Copium' },
-  { id: 'hype',       label: '🔥 Hype' },
-  { id: 'sus',        label: '👀 Sus' },
-];
-const SIT_LABEL = Object.fromEntries(SITUATIONS.map(s => [s.id, s.label]));
-let activeSituation = 'all';
-let pickedSituation = 'w';
-let libraryCache = [];
+let libraryCache  = [];
+let librarySearch = '';
 
-function buildSituationFilter() {
-  const wrap = document.getElementById('situation-filter');
-  wrap.innerHTML = '';
-  const all = ['all', ...SITUATIONS.map(s => s.id)];
-  all.forEach(id => {
-    const chip = document.createElement('div');
-    chip.className = 'sit-chip' + (id === activeSituation ? ' active' : '');
-    chip.textContent = id === 'all' ? '✨ All' : SIT_LABEL[id];
-    chip.addEventListener('click', () => { activeSituation = id; buildSituationFilter(); renderLibrary(); });
-    wrap.appendChild(chip);
-  });
+// Build a sensible default name from a URL or filename, so saving needs no prompt.
+function autoClipName(src, fallback) {
+  if (!src) return fallback || 'Clip';
+  if (/tiktok\.com/.test(src))        return 'TikTok clip';
+  if (/(?:twitter|x)\.com/.test(src)) return 'X clip';
+  if (/youtu/.test(src))              return 'YouTube clip';
+  try {
+    const last = src.split('?')[0].split('/').filter(Boolean).pop() || '';
+    const base = decodeURIComponent(last).replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ').trim();
+    if (base) return base.slice(0, 40);
+  } catch {}
+  return fallback || 'Clip';
 }
+
+const libSearchInput = document.getElementById('lib-search');
+libSearchInput.addEventListener('input', () => {
+  librarySearch = libSearchInput.value.trim().toLowerCase();
+  renderLibrary();
+});
 
 async function renderLibrary() {
   libraryCache = await window.sender.libraryList();
-  const items = libraryCache.filter(c => activeSituation === 'all' || c.situation === activeSituation);
+  const items = librarySearch
+    ? libraryCache.filter(c => (c.name || '').toLowerCase().includes(librarySearch))
+    : libraryCache;
   libraryGrid.innerHTML = '';
   if (!items.length) {
     libraryEmpty.style.display = 'block';
     libraryEmpty.textContent = libraryCache.length
-      ? 'No clips in this situation yet'
-      : 'No clips saved yet — paste a video in Compose and hit ★ Save';
+      ? 'No clips match your search'
+      : 'No clips yet — paste a link or drop a video below to save your first one';
     return;
   }
   libraryEmpty.style.display = 'none';
-  items.forEach(entry => {
-    const tile = document.createElement('div');
-    tile.className = 'clip-tile';
+  items.forEach(entry => libraryGrid.appendChild(renderClipTile(entry)));
+}
 
-    const vid = document.createElement('video');
-    vid.src = `clip://clips/${entry.file}`;
-    vid.muted = true; vid.preload = 'metadata'; vid.playsInline = true;
-    tile.addEventListener('mouseenter', () => { vid.play().catch(() => {}); });
-    tile.addEventListener('mouseleave', () => { vid.pause(); vid.currentTime = 0; });
+function renderClipTile(entry) {
+  const tile = document.createElement('div');
+  tile.className = 'clip-tile';
 
-    const name = document.createElement('div');
-    name.className = 'clip-name';
-    name.textContent = entry.name;
+  const vid = document.createElement('video');
+  vid.src = `clip://clips/${entry.file}`;
+  vid.muted = true; vid.preload = 'metadata'; vid.playsInline = true;
+  tile.addEventListener('mouseenter', () => { vid.play().catch(() => {}); });
+  tile.addEventListener('mouseleave', () => { vid.pause(); vid.currentTime = 0; });
 
-    const del = document.createElement('button');
-    del.className = 'clip-del'; del.textContent = '✕';
-    del.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      libraryCache = await window.sender.libraryDelete(entry.id);
-      renderLibrary();
-    });
+  const name = document.createElement('div');
+  name.className = 'clip-name';
+  name.textContent = entry.name;
+  name.title = 'Click to rename';
+  name.addEventListener('click', (e) => { e.stopPropagation(); beginRename(entry, name); });
 
-    tile.addEventListener('click', () => loadLibraryClip(entry, tile));
-    tile.appendChild(vid); tile.appendChild(del); tile.appendChild(name);
-    libraryGrid.appendChild(tile);
+  const del = document.createElement('button');
+  del.className = 'clip-del'; del.textContent = '✕';
+  del.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    libraryCache = await window.sender.libraryDelete(entry.id);
+    renderLibrary();
   });
+
+  const toDeck = document.createElement('button');
+  toDeck.className = 'clip-deck'; toDeck.textContent = '🎛'; toDeck.title = 'Add to Deck';
+  toDeck.addEventListener('click', (e) => { e.stopPropagation(); addClipToDeck(entry); });
+
+  tile.addEventListener('click', () => loadLibraryClip(entry, tile));
+  tile.appendChild(vid); tile.appendChild(del); tile.appendChild(toDeck); tile.appendChild(name);
+  return tile;
+}
+
+// Drop a library clip straight onto the first free Deck slot (grows a row if full).
+async function addClipToDeck(entry) {
+  const deck = (await window.sender.getDeck()) || { cols: 4, rows: 3, buttons: [] };
+  if (!Array.isArray(deck.buttons)) deck.buttons = [];
+  const total = deck.cols * deck.rows;
+  let slot = -1;
+  for (let i = 0; i < total; i++) { if (!deck.buttons.find(b => b.slot === i)) { slot = i; break; } }
+  if (slot === -1) {
+    if (deck.rows < 6) { deck.rows += 1; slot = total; }   // make room with one more row
+    else { setStatus('🎛 Deck is full — free a slot first', 'err'); setTimeout(() => setStatus(''), 2500); return; }
+  }
+  const pos = ANCHOR_MAP['center'];
+  deck.buttons.push({
+    id: 'd' + Date.now(), slot, icon: '🎬', label: (entry.name || 'Meme').slice(0, 18),
+    clipId: entry.id, url: null, isVideo: true, effects: [], size: 'm', anchor: 'center',
+    positionX: pos.positionX, positionY: pos.positionY, caption: null, target: null, hotkey: '',
+  });
+  await window.sender.saveDeck(deck);
+  setStatus('🎛 Added to Deck — set a hotkey in the Deck tab', 'ok');
+  setTimeout(() => setStatus(''), 2600);
+}
+
+// Inline rename — click a clip's name, type, Enter to save (Esc to cancel).
+function beginRename(entry, nameEl) {
+  const input = document.createElement('input');
+  input.className = 'clip-name-input';
+  input.value = entry.name;
+  input.maxLength = 60;
+  nameEl.replaceWith(input);
+  input.focus(); input.select();
+  let done = false;
+  const commit = async (save) => {
+    if (done) return; done = true;
+    if (save) {
+      const v = input.value.trim();
+      if (v && v !== entry.name) { entry.name = v; await window.sender.libraryRename(entry.id, v); }
+    }
+    renderLibrary();
+  };
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')  { e.preventDefault(); commit(true); }
+    if (e.key === 'Escape') { e.preventDefault(); commit(false); }
+  });
+  input.addEventListener('blur', () => commit(true));
 }
 
 async function loadLibraryClip(entry, tile) {
@@ -824,50 +889,50 @@ async function loadLibraryClip(entry, tile) {
   }
 }
 
-// ── Save-to-library modal ──
-saveClipBtn.addEventListener('click', openLibModal);
+// ── Save to library — instant, no modal, auto-named (rename later by clicking) ──
+async function saveLinkToLibrary(url) {
+  if (!url) return;
+  setStatus('Saving…');
+  const res = await window.sender.librarySave({ url, name: autoClipName(url) });
+  if (res.error) { setStatus('✗ ' + res.error, 'err'); setTimeout(() => setStatus(''), 2800); return; }
+  setStatus('📚 Saved to library!', 'ok'); setTimeout(() => setStatus(''), 1500);
+  if (isPanelActive('library')) renderLibrary();
+}
+async function saveFileToLibrary(file) {
+  if (!file.type.startsWith('video/')) { setStatus('Library saves videos only', 'err'); setTimeout(() => setStatus(''), 2200); return; }
+  setStatus('Saving…');
+  const ab = await file.arrayBuffer();
+  const res = await window.sender.librarySaveBuffer(ab, autoClipName(file.name, 'Clip'));
+  if (res.error) { setStatus('✗ ' + res.error, 'err'); setTimeout(() => setStatus(''), 2800); return; }
+  setStatus('📚 Saved to library!', 'ok'); setTimeout(() => setStatus(''), 1500);
+  if (isPanelActive('library')) renderLibrary();
+}
 
-function openLibModal() {
+// Compose ★ Save — one click, auto-named from the caption/label.
+saveClipBtn.addEventListener('click', async () => {
   if (!mediaUrl) return;
-  pickedSituation = 'w';
-  const nameInput = document.getElementById('lib-name-input');
-  nameInput.value = (capInput.value.trim() || '').slice(0, 60);
-  buildSituationPicker();
-  document.getElementById('lib-modal').classList.add('open');
-  setTimeout(() => nameInput.focus(), 50);
-}
-function closeLibModal() {
-  document.getElementById('lib-modal').classList.remove('open');
-}
-
-function buildSituationPicker() {
-  const wrap = document.getElementById('lib-situation-pick');
-  wrap.innerHTML = '';
-  SITUATIONS.forEach(s => {
-    const chip = document.createElement('div');
-    chip.className = 'sit-chip' + (s.id === pickedSituation ? ' active' : '');
-    chip.textContent = s.label;
-    chip.addEventListener('click', () => { pickedSituation = s.id; buildSituationPicker(); });
-    wrap.appendChild(chip);
-  });
-}
-
-document.getElementById('lib-save-ok').addEventListener('click', async () => {
-  if (!mediaUrl) return;
-  const okBtn = document.getElementById('lib-save-ok');
-  const name = document.getElementById('lib-name-input').value.trim() || 'Clip';
-  okBtn.disabled = true; okBtn.textContent = 'Saving…';
-  const res = await window.sender.librarySave({ url: mediaUrl, name, situation: pickedSituation });
-  okBtn.disabled = false; okBtn.textContent = 'Save';
-  if (res.error) { setStatus('✗ ' + res.error, 'err'); setTimeout(() => setStatus(''), 2500); return; }
-  closeLibModal();
-  setStatus('📚 Saved to library!', 'ok');
-  setTimeout(() => setStatus(''), 1500);
+  saveClipBtn.disabled = true;
+  const name = capInput.value.trim() || autoClipName(mediaUrl, urlText.textContent);
+  const res = await window.sender.librarySave({ url: mediaUrl, name });
+  saveClipBtn.disabled = false;
+  if (res.error) { setStatus('✗ ' + res.error, 'err'); setTimeout(() => setStatus(''), 2800); return; }
+  setStatus('📚 Saved to library!', 'ok'); setTimeout(() => setStatus(''), 1500);
   if (isPanelActive('library')) renderLibrary();
 });
-document.getElementById('lib-save-cancel').addEventListener('click', closeLibModal);
-document.getElementById('lib-name-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') document.getElementById('lib-save-ok').click();
+
+// Drop a video file (or a dragged link) straight onto the Library tab.
+const libPanel = document.getElementById('library-panel');
+let libDragCount = 0;
+libPanel.addEventListener('dragenter', (e) => { e.preventDefault(); libDragCount++; libPanel.classList.add('lib-drag'); });
+libPanel.addEventListener('dragover',  (e) => e.preventDefault());
+libPanel.addEventListener('dragleave', () => { libDragCount--; if (libDragCount <= 0) { libDragCount = 0; libPanel.classList.remove('lib-drag'); } });
+libPanel.addEventListener('drop', async (e) => {
+  e.preventDefault(); e.stopPropagation();
+  libDragCount = 0; libPanel.classList.remove('lib-drag');
+  const file = [...(e.dataTransfer?.files || [])][0];
+  const text = (e.dataTransfer?.getData('text') || '').trim();
+  if (file) await saveFileToLibrary(file);
+  else if (text.startsWith('http')) await saveLinkToLibrary(text);
 });
 
 // ── Settings tab ──────────────────────────────────────────────────────────────
@@ -934,3 +999,320 @@ if (window.sender.onUpdateStatus) {
     if (st) st.textContent = msg;
   });
 }
+
+// ── Meme Deck ───────────────────────────────────────────────────────────────────
+// Stream Deck-style grid. Each key fires a saved meme on click or via a global
+// hotkey (works even with the window closed — that's the point: in-game).
+let deckState   = { cols: 4, rows: 3, buttons: [] };
+let deckEditSlot = null;   // grid slot index being configured
+let deckEditId   = null;   // existing button id, or null for a new one
+let deckFxSel    = new Set();
+let deckSize     = 'm';
+let deckAnchor   = 'center';
+let deckHotkey   = '';
+
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+let deckClipMap = {};   // clipId → library entry (for key thumbnails)
+
+async function renderDeck() {
+  deckState = (await window.sender.getDeck()) || { cols: 4, rows: 3, buttons: [] };
+  if (!Array.isArray(deckState.buttons)) deckState.buttons = [];
+
+  // Map saved clips so configured keys can show a real video thumbnail.
+  try {
+    const clips = await window.sender.libraryList();
+    deckClipMap = Object.fromEntries((clips || []).map(c => [c.id, c]));
+  } catch { deckClipMap = {}; }
+
+  document.getElementById('deck-cols').textContent = deckState.cols;
+  document.getElementById('deck-rows').textContent = deckState.rows;
+
+  const grid = document.getElementById('deck-grid');
+  grid.style.gridTemplateColumns = `repeat(${deckState.cols}, 1fr)`;
+  grid.style.gridTemplateRows    = `repeat(${deckState.rows}, 1fr)`;
+  grid.innerHTML = '';
+  const total = deckState.cols * deckState.rows;
+  for (let i = 0; i < total; i++) {
+    const btn = deckState.buttons.find(b => b.slot === i);
+    grid.appendChild(btn ? deckKeyConfigured(btn) : deckKeyEmpty(i));
+  }
+}
+
+function deckKeyEmpty(slot) {
+  const el = document.createElement('div');
+  el.className = 'deck-key empty';
+  el.innerHTML = '<div class="deck-key-plus">＋</div><div class="deck-key-add">Add meme</div>';
+  el.addEventListener('click', () => openDeckModal(slot, null));
+  return el;
+}
+
+// Where a resting (paused) video parks so the key shows a real frame, not black.
+const DECK_POSTER_T = 0.1;
+
+// Build the visual thumbnail for a key: library clip → looping video on hover,
+// image/gif URL → image, embeds (TikTok/YouTube/X) → big emoji.
+function deckKeyThumb(btn) {
+  const thumb = document.createElement('div');
+  thumb.className = 'deck-key-thumb';
+  const emoji = () => { thumb.innerHTML = `<div class="deck-key-emoji">${btn.icon || '🎬'}</div>`; };
+
+  const makeVideo = (src) => {
+    const v = document.createElement('video');
+    v.src = src; v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto';
+    v.onerror = emoji;
+    // Seek a hair past 0 so a real frame paints as the poster (a paused <video>
+    // with no poster otherwise renders black until it's played).
+    v.addEventListener('loadeddata', () => { try { v.currentTime = DECK_POSTER_T; } catch {} }, { once: true });
+    thumb.appendChild(v);
+    return v;
+  };
+
+  if (btn.clipId && deckClipMap[btn.clipId]) {
+    return { thumb, video: makeVideo(`clip://clips/${deckClipMap[btn.clipId].file}`) };
+  }
+  const url = btn.url || '';
+  if (url && !isEmbedUrl(url) && !btn.isVideo) {
+    const img = document.createElement('img');
+    img.src = url; img.loading = 'lazy'; img.onerror = emoji;
+    thumb.appendChild(img);
+    return { thumb, video: null };
+  }
+  if (url && btn.isVideo && !isEmbedUrl(url)) {
+    return { thumb, video: makeVideo(url) };
+  }
+  emoji();
+  return { thumb, video: null };
+}
+
+function deckKeyConfigured(btn) {
+  const el = document.createElement('div');
+  el.className = 'deck-key configured';
+
+  const { thumb, video } = deckKeyThumb(btn);
+  el.appendChild(thumb);
+
+  if (video) {
+    el.addEventListener('mouseenter', () => { video.play().catch(() => {}); });
+    el.addEventListener('mouseleave', () => { try { video.pause(); video.currentTime = DECK_POSTER_T; } catch {} });
+  }
+
+  const bar = document.createElement('div');
+  bar.className = 'deck-key-bar';
+  bar.innerHTML = `<span class="deck-key-tag">${btn.icon || '🎬'}</span>` +
+                  `<span class="deck-key-label"></span>`;
+  bar.querySelector('.deck-key-label').textContent = btn.label || 'Meme';
+  el.appendChild(bar);
+
+  if (btn.hotkey) {
+    const hk = document.createElement('div');
+    hk.className = 'deck-key-hk'; hk.textContent = prettyHotkey(btn.hotkey);
+    el.appendChild(hk);
+  }
+
+  const edit = document.createElement('button');
+  edit.className = 'deck-key-edit'; edit.textContent = '✎'; edit.title = 'Edit';
+  edit.addEventListener('click', (e) => { e.stopPropagation(); openDeckModal(btn.slot, btn.id); });
+  el.appendChild(edit);
+
+  el.addEventListener('click', () => fireDeckKey(btn, el));
+  return el;
+}
+
+function prettyHotkey(h) { return h.replace('CommandOrControl', 'Ctrl'); }
+
+async function fireDeckKey(btn, el) {
+  el.classList.remove('fire-ok', 'fire-err');
+  el.classList.add('firing');
+  let r;
+  try { r = await window.sender.fireDeck(btn.id); } catch { r = { error: 'failed' }; }
+  el.classList.remove('firing');
+  const ok = r && r.ok;
+  el.classList.add(ok ? 'fire-ok' : 'fire-err');
+  if (ok && r.clout != null) updateCloutHud(r.clout, r.rank);
+  setTimeout(() => el.classList.remove('fire-ok', 'fire-err'), 700);
+}
+
+// ── Grid size steppers ──
+async function changeDeckDim(which, delta) {
+  const cols = which === 'cols' ? clamp(deckState.cols + delta, 2, 6) : deckState.cols;
+  const rows = which === 'rows' ? clamp(deckState.rows + delta, 1, 6) : deckState.rows;
+  if (cols === deckState.cols && rows === deckState.rows) return;
+  deckState = { ...deckState, cols, rows };
+  await window.sender.saveDeck(deckState);
+  renderDeck();
+}
+document.getElementById('deck-col-dn').addEventListener('click', () => changeDeckDim('cols', -1));
+document.getElementById('deck-col-up').addEventListener('click', () => changeDeckDim('cols', +1));
+document.getElementById('deck-row-dn').addEventListener('click', () => changeDeckDim('rows', -1));
+document.getElementById('deck-row-up').addEventListener('click', () => changeDeckDim('rows', +1));
+
+// ── Config modal ──
+function openDeckModal(slot, id) {
+  deckEditSlot = slot; deckEditId = id;
+  const btn = id ? deckState.buttons.find(b => b.id === id) : null;
+
+  populateDeckClips(btn);
+  document.getElementById('deck-icon').value    = btn?.icon || '';
+  document.getElementById('deck-label').value   = btn?.label || '';
+  document.getElementById('deck-url').value     = btn?.url || '';
+  document.getElementById('deck-caption').value = btn?.caption || '';
+  deckSize   = btn?.size   || 'm';      setDeckSize(deckSize);
+  deckAnchor = btn?.anchor || 'center'; setDeckAnchor(deckAnchor);
+  deckFxSel  = new Set(btn?.effects || []); renderDeckFx();
+  deckHotkey = btn?.hotkey || '';
+  document.getElementById('deck-hotkey').value = prettyHotkey(deckHotkey);
+  document.getElementById('deck-hotkey-warn').textContent = '';
+  document.getElementById('deck-media-status').textContent = '';
+  document.getElementById('deck-modal-title').textContent = id ? 'Edit button' : 'New button';
+  document.getElementById('deck-save-del').classList.toggle('hidden', !id);
+
+  document.getElementById('deck-modal').classList.add('open');
+  setTimeout(() => document.getElementById('deck-label').focus(), 50);
+}
+function closeDeckModal() {
+  document.getElementById('deck-modal').classList.remove('open');
+  document.getElementById('deck-hotkey').classList.remove('capturing');
+}
+
+async function populateDeckClips(btn) {
+  const sel = document.getElementById('deck-clip');
+  sel.innerHTML = '<option value="">— pick a library clip —</option>';
+  let clips = [];
+  try { clips = await window.sender.libraryList(); } catch {}
+  clips.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.id;
+    o.textContent = c.name;
+    sel.appendChild(o);
+  });
+  sel.value = btn?.clipId || '';
+}
+
+// Build the effect chips once (cloned from the Compose list so they always match).
+function buildDeckFx() {
+  const wrap = document.getElementById('deck-fx');
+  wrap.innerHTML = '';
+  document.querySelectorAll('#advanced .chip[data-fx]').forEach(src => {
+    const chip = document.createElement('div');
+    chip.className = 'chip'; chip.dataset.fx = src.dataset.fx; chip.textContent = src.textContent;
+    chip.addEventListener('click', () => {
+      const fx = chip.dataset.fx;
+      if (deckFxSel.has(fx)) { deckFxSel.delete(fx); chip.classList.remove('active'); }
+      else { deckFxSel.add(fx); chip.classList.add('active'); }
+    });
+    wrap.appendChild(chip);
+  });
+}
+function renderDeckFx() {
+  document.querySelectorAll('#deck-fx .chip').forEach(c => c.classList.toggle('active', deckFxSel.has(c.dataset.fx)));
+}
+buildDeckFx();
+
+document.querySelectorAll('#deck-size .size-chip').forEach(b => b.addEventListener('click', () => setDeckSize(b.dataset.size)));
+function setDeckSize(s) {
+  deckSize = s;
+  document.querySelectorAll('#deck-size .size-chip').forEach(b => b.classList.toggle('active', b.dataset.size === s));
+}
+document.querySelectorAll('#deck-anchor .anchor-btn').forEach(b => b.addEventListener('click', () => setDeckAnchor(b.dataset.anchor)));
+function setDeckAnchor(a) {
+  deckAnchor = a;
+  document.querySelectorAll('#deck-anchor .anchor-btn').forEach(b => b.classList.toggle('active', b.dataset.anchor === a));
+}
+
+document.getElementById('deck-use-compose').addEventListener('click', () => {
+  if (!mediaUrl) { document.getElementById('deck-media-status').textContent = '⚠ Nothing loaded in Compose'; return; }
+  document.getElementById('deck-clip').value = '';
+  document.getElementById('deck-url').value = mediaUrl;
+  document.getElementById('deck-media-status').textContent = '✓ Using current Compose media';
+});
+
+// ── Hotkey capture ──
+const KEY_MAP = { ' ': 'Space', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right' };
+function accelFromEvent(e) {
+  const key = e.key;
+  if (key === 'Escape') return { cancel: true };
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) return null;   // wait for the real key
+  const mods = [];
+  if (e.ctrlKey || e.metaKey) mods.push('CommandOrControl');
+  if (e.altKey)  mods.push('Alt');
+  if (e.shiftKey) mods.push('Shift');
+  let k = key;
+  if (/^[a-z]$/i.test(k))                 k = k.toUpperCase();
+  else if (/^[0-9]$/.test(k))             k = k;
+  else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(k)) k = k;
+  else if (KEY_MAP[k])                    k = KEY_MAP[k];
+  else if (k.length !== 1)               return { warn: 'Unsupported key — try a letter, number or F-key.' };
+  if (!mods.length) return { warn: 'Add Ctrl / Alt / Shift — a bare key would hijack typing everywhere.' };
+  return { accel: [...mods, k].join('+') };
+}
+const hkInput = document.getElementById('deck-hotkey');
+hkInput.addEventListener('focus', () => hkInput.classList.add('capturing'));
+hkInput.addEventListener('blur',  () => hkInput.classList.remove('capturing'));
+hkInput.addEventListener('keydown', (e) => {
+  e.preventDefault();
+  const r = accelFromEvent(e);
+  if (r === null) return;
+  if (r.cancel) { hkInput.blur(); return; }
+  const warnEl = document.getElementById('deck-hotkey-warn');
+  if (r.warn) { warnEl.textContent = '⚠ ' + r.warn; return; }
+  deckHotkey = r.accel;
+  hkInput.value = prettyHotkey(r.accel);
+  warnEl.textContent = '';
+});
+document.getElementById('deck-hotkey-clear').addEventListener('click', () => {
+  deckHotkey = ''; hkInput.value = ''; document.getElementById('deck-hotkey-warn').textContent = '';
+});
+
+// ── Save / delete ──
+async function saveDeckButton() {
+  const clipId = document.getElementById('deck-clip').value || null;
+  const url    = document.getElementById('deck-url').value.trim() || null;
+  const mediaStatus = document.getElementById('deck-media-status');
+  if (!clipId && !url) { mediaStatus.textContent = '⚠ Pick a library clip or paste a link first'; return; }
+
+  if (deckHotkey) {
+    const clash = deckState.buttons.find(b => b.hotkey === deckHotkey && b.id !== deckEditId);
+    if (clash) {
+      document.getElementById('deck-hotkey-warn').textContent =
+        `⚠ ${prettyHotkey(deckHotkey)} already bound to "${clash.label || 'another button'}"`;
+      return;
+    }
+  }
+
+  const pos = ANCHOR_MAP[deckAnchor] || ANCHOR_MAP['center'];
+  const isVideo = !!clipId || /\.(mp4|webm)(\?|$)/i.test(url || '') || /tiktok|twitter|x\.com|youtu/.test(url || '');
+  const btn = {
+    id:        deckEditId || ('d' + Date.now()),
+    slot:      deckEditSlot,
+    icon:      document.getElementById('deck-icon').value.trim() || '🎬',
+    label:     document.getElementById('deck-label').value.trim() || 'Meme',
+    clipId,
+    url:       clipId ? null : url,
+    isVideo,
+    effects:   [...deckFxSel],
+    size:      deckSize,
+    anchor:    deckAnchor,
+    positionX: pos.positionX,
+    positionY: pos.positionY,
+    caption:   document.getElementById('deck-caption').value.trim() || null,
+    target:    null,
+    hotkey:    deckHotkey || '',
+  };
+  const buttons = deckState.buttons.filter(b => b.id !== btn.id);
+  buttons.push(btn);
+  deckState = { ...deckState, buttons };
+  await window.sender.saveDeck(deckState);
+  closeDeckModal();
+  renderDeck();
+}
+async function deleteDeckButton() {
+  if (!deckEditId) return;
+  deckState = { ...deckState, buttons: deckState.buttons.filter(b => b.id !== deckEditId) };
+  await window.sender.saveDeck(deckState);
+  closeDeckModal();
+  renderDeck();
+}
+document.getElementById('deck-save-ok').addEventListener('click', saveDeckButton);
+document.getElementById('deck-save-del').addEventListener('click', deleteDeckButton);
+document.getElementById('deck-save-cancel').addEventListener('click', closeDeckModal);

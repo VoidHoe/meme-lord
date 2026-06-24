@@ -20,7 +20,7 @@
       border-bottom: 1px solid var(--line-soft);
       background: linear-gradient(180deg, rgba(28,158,255,.06), transparent);
     }
-    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
     .crest {
       width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
       font-size: 14px; background: linear-gradient(135deg, var(--accent), var(--accent-deep));
@@ -30,11 +30,13 @@
       font-family: var(--font-display); font-weight: 800; font-size: 14px; letter-spacing: 2.5px;
       color: var(--head); text-shadow: 0 0 14px rgba(28,158,255,.5);
     }
-    #tabs { -webkit-app-region: no-drag; display: flex; gap: 2px; margin-left: 6px; }
+    #tabs { -webkit-app-region: no-drag; display: flex; gap: 2px; margin-left: 6px; flex-shrink: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    #tabs::-webkit-scrollbar { display: none; }
     .tab {
       font-family: var(--font-ui); font-weight: 700; font-size: 12.5px; letter-spacing: 1.2px;
       text-transform: uppercase; color: var(--muted); background: none; border: none;
       padding: 8px 13px; cursor: pointer; position: relative; transition: color .15s;
+      flex-shrink: 0; white-space: nowrap;
     }
     .tab:hover { color: var(--text); }
     .tab.active { color: var(--accent-bright); }
@@ -47,7 +49,7 @@
     #clout-hud b { color: var(--accent-bright); font-weight: 800; }
     #clout-hud #clout-rank { color: var(--head); text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
     #clout-hud.hidden { display: none; }
-    .winctl { -webkit-app-region: no-drag; display: flex; gap: 6px; }
+    .winctl { -webkit-app-region: no-drag; display: flex; gap: 6px; flex-shrink: 0; margin-left: auto; }
     .winctl button {
       width: 28px; height: 28px; border: 1px solid var(--line); background: var(--panel-2);
       color: var(--muted); cursor: pointer; font-size: 13px; transition: all .15s;
@@ -213,10 +215,19 @@
     .history-resend:disabled { opacity: .4; cursor: default; }
 
     /* ── Library panel ──────────────────────────────────────────── */
-    #situation-filter { display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
-    .sit-chip { padding: 6px 11px; border: 1px solid var(--line); background: rgba(6,20,34,.5); color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; clip-path: var(--cut-sm); }
-    .sit-chip:hover { border-color: var(--accent); color: var(--accent-bright); }
-    .sit-chip.active { background: rgba(28,158,255,.16); border-color: var(--accent); color: var(--accent-bright); }
+    .lib-bar { flex-shrink: 0; }
+    #lib-search { width: 100%; }
+    #lib-drop-hint {
+      flex-shrink: 0; text-align: center; font-size: 11px; letter-spacing: .4px; color: var(--faint);
+      border: 1px dashed var(--line-soft); padding: 8px; background: rgba(6,16,26,.35); transition: all .15s;
+    }
+    #library-panel.lib-drag #lib-drop-hint,
+    #library-panel.lib-drag #library-grid { pointer-events: none; }
+    #library-panel.lib-drag #lib-drop-hint { border-color: var(--accent); border-style: solid; color: var(--accent-bright); background: rgba(28,158,255,.1); box-shadow: var(--glow-soft); }
+    .clip-name-input {
+      width: 100%; background: rgba(6,20,34,.85); border: 1px solid var(--accent); color: #fff;
+      font-size: 12px; font-family: inherit; padding: 5px 8px; outline: none;
+    }
     #library-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; overflow-y: auto; flex: 1; align-content: start; }
     .clip-tile { position: relative; overflow: hidden; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; transition: border-color .15s, transform .15s; }
     .clip-tile:hover { border-color: var(--accent); transform: scale(1.02); }
@@ -225,6 +236,9 @@
     .clip-tile .clip-del { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border: none; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .15s; }
     .clip-tile:hover .clip-del { opacity: 1; }
     .clip-tile .clip-del:hover { background: rgba(248,113,113,.85); }
+    .clip-tile .clip-deck { position: absolute; top: 5px; left: 5px; width: 22px; height: 22px; border: none; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity .15s; line-height: 1; }
+    .clip-tile:hover .clip-deck { opacity: 1; }
+    .clip-tile .clip-deck:hover { background: var(--accent); }
     .clip-tile .clip-sending { position: absolute; inset: 0; background: rgba(7,13,21,.75); display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--accent-bright); font-weight: 700; }
 
     /* ── Settings panel ─────────────────────────────────────────── */
@@ -241,6 +255,102 @@
     #settings-save-btn { width: 100%; padding: 13px; font-size: 14px; margin-top: 4px; }
     #settings-update-btn { width: 100%; padding: 11px; margin-top: 14px; }
     .set-status { font-size: 12px; color: var(--ok); margin-top: 8px; min-height: 16px; }
+
+    /* ── Meme Deck ──────────────────────────────────────────────── */
+    #deck-panel { gap: 12px; }
+    .deck-ctl { display: flex; align-items: center; gap: 4px; -webkit-app-region: no-drag; text-transform: none; padding: 4px 6px; border: 1px solid var(--line-soft); background: rgba(6,20,34,.5); clip-path: var(--cut-sm); }
+    .deck-ctl-lbl { font-size: 10px; letter-spacing: 1.5px; color: var(--faint); text-transform: uppercase; margin-right: 3px; }
+    .deck-step { width: 22px; height: 22px; border: 1px solid var(--line); background: rgba(28,158,255,.06); color: var(--accent-bright); font-size: 14px; font-weight: 800; line-height: 1; cursor: pointer; font-family: inherit; padding: 0; transition: all .12s; }
+    .deck-step:hover { border-color: var(--accent); background: rgba(28,158,255,.18); box-shadow: var(--glow-soft); }
+    .deck-step:active { transform: translateY(1px); }
+    .deck-dim { color: var(--head); font-weight: 800; font-size: 14px; min-width: 14px; text-align: center; }
+    .deck-x { font-size: 9px; color: var(--muted); letter-spacing: .5px; text-transform: uppercase; margin: 0 2px; }
+    .deck-sep { color: var(--line); margin: 0 4px; }
+
+    #deck-grid { flex: 1; min-height: 0; display: grid; gap: 10px; overflow: hidden; padding: 3px; }
+
+    .deck-key {
+      position: relative; min-width: 0; min-height: 0; border: 1px solid var(--line);
+      background: linear-gradient(160deg, rgba(16,40,62,.6), rgba(6,16,26,.85));
+      cursor: pointer; transition: transform .12s, border-color .12s, box-shadow .12s;
+      clip-path: var(--cut-sm); overflow: hidden;
+    }
+    .deck-key:hover { transform: translateY(-2px); border-color: var(--accent); box-shadow: var(--glow-soft); }
+    .deck-key:active { transform: translateY(0) scale(.97); }
+
+    /* thumbnail / media fill */
+    .deck-key-thumb { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #050c14; }
+    .deck-key-thumb img, .deck-key-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .deck-key-thumb .deck-key-emoji { font-size: 34px; line-height: 1; filter: drop-shadow(0 2px 6px rgba(0,0,0,.5)); }
+    .deck-key:hover .deck-key-thumb img, .deck-key:hover .deck-key-thumb video { transform: scale(1.06); transition: transform .25s; }
+
+    /* bottom label bar */
+    .deck-key-bar {
+      position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding: 14px 7px 6px;
+      display: flex; align-items: center; gap: 5px;
+      background: linear-gradient(transparent, rgba(3,9,16,.92));
+    }
+    .deck-key-tag { font-size: 13px; line-height: 1; flex-shrink: 0; }
+    .deck-key-label { font-size: 11px; font-weight: 700; letter-spacing: .4px; color: var(--head); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* hotkey pill */
+    .deck-key-hk {
+      position: absolute; top: 5px; left: 5px; z-index: 2; padding: 2px 6px;
+      font-size: 9px; font-weight: 700; letter-spacing: .3px; color: #fff;
+      background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+      box-shadow: 0 0 8px rgba(28,158,255,.45); clip-path: var(--cut-sm);
+      max-width: calc(100% - 36px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .deck-key-edit {
+      position: absolute; top: 5px; right: 5px; z-index: 3; width: 22px; height: 22px; border: none;
+      background: rgba(3,9,16,.7); color: #fff; font-size: 11px; cursor: pointer; opacity: 0;
+      transition: opacity .12s, background .12s; clip-path: var(--cut-sm);
+    }
+    .deck-key:hover .deck-key-edit { opacity: 1; }
+    .deck-key-edit:hover { background: var(--accent); }
+
+    /* empty slot */
+    .deck-key.empty { background: rgba(6,16,26,.4); border-style: dashed; border-color: var(--line-soft); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+    .deck-key.empty::before, .deck-key.empty::after {
+      content: ''; position: absolute; width: 14px; height: 14px; pointer-events: none;
+      border-color: var(--accent); opacity: 0; transition: opacity .15s;
+    }
+    .deck-key.empty::before { left: 6px; top: 6px; border-left: 2px solid; border-top: 2px solid; }
+    .deck-key.empty::after  { right: 6px; bottom: 6px; border-right: 2px solid; border-bottom: 2px solid; }
+    .deck-key.empty:hover { border-style: solid; border-color: var(--accent); background: rgba(28,158,255,.07); transform: none; }
+    .deck-key.empty:hover::before, .deck-key.empty:hover::after { opacity: 1; }
+    .deck-key-plus { font-size: 30px; font-weight: 300; color: var(--faint); transition: color .15s, transform .15s; line-height: 1; }
+    .deck-key-add { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--faint); opacity: 0; transition: opacity .15s; }
+    .deck-key.empty:hover .deck-key-plus { color: var(--accent-bright); transform: scale(1.15); }
+    .deck-key.empty:hover .deck-key-add { opacity: 1; color: var(--accent-bright); }
+
+    /* fire feedback */
+    .deck-key.firing { border-color: var(--accent); box-shadow: var(--glow); transform: scale(.95); }
+    .deck-key.fire-ok  { border-color: var(--ok);     box-shadow: 0 0 16px rgba(57,217,138,.6); }
+    .deck-key.fire-err { border-color: var(--danger); box-shadow: 0 0 16px rgba(248,113,113,.6); }
+    @keyframes deckPulse { 0% { box-shadow: 0 0 4px rgba(28,158,255,.3); } 50% { box-shadow: 0 0 18px rgba(28,158,255,.7); } 100% { box-shadow: 0 0 4px rgba(28,158,255,.3); } }
+
+    #deck-hint { flex-shrink: 0; text-align: center; font-size: 11px; color: var(--faint); letter-spacing: .3px; }
+    #deck-hint b { color: var(--muted); font-weight: 700; }
+
+    /* deck config modal */
+    .deck-modal-box { width: 380px; max-height: 92vh; overflow-y: auto; gap: 7px; }
+    .deck-modal-box .modal-label { margin-top: 4px; }
+    .deck-form-row { display: flex; gap: 10px; }
+    .deck-form-col { display: flex; flex-direction: column; gap: 5px; }
+    .deck-modal-box select.lc-field { width: 100%; }
+    .deck-mini-btn { background: rgba(28,158,255,.08); border: 1px solid var(--line-soft); color: var(--accent-bright); padding: 7px; cursor: pointer; font-family: inherit; font-size: 12px; transition: all .15s; }
+    .deck-mini-btn:hover { background: rgba(28,158,255,.16); border-color: var(--accent); }
+    .deck-media-status { font-size: 11px; color: var(--accent-bright); min-height: 14px; }
+    .deck-fx { max-height: 92px; overflow-y: auto; }
+    .deck-fx .chip { font-size: 11px; padding: 5px 10px; }
+    .deck-hk-row { display: flex; gap: 8px; }
+    .deck-hk-row input { flex: 1; cursor: pointer; }
+    #deck-hotkey.capturing { border-color: var(--accent); box-shadow: var(--glow-soft); color: var(--accent-bright); }
+    .deck-hk-warn { font-size: 11px; color: var(--danger); min-height: 14px; }
+    .deck-del-btn { color: var(--danger); border-color: rgba(248,113,113,.3); }
+    .deck-del-btn:hover { background: rgba(248,113,113,.12); border-color: var(--danger); }
+    .deck-del-btn.hidden { display: none; }
 
     /* ── Modals ─────────────────────────────────────────────────── */
     .modal { display: none; position: fixed; inset: 0; background: rgba(2,6,12,.78); align-items: center; justify-content: center; z-index: 99; backdrop-filter: blur(3px); }
@@ -268,6 +378,7 @@
       </div>
       <nav id="tabs">
         <button class="tab active" data-tab="compose">Compose</button>
+        <button class="tab" data-tab="deck">Deck</button>
         <button class="tab" data-tab="library">Library</button>
         <button class="tab" data-tab="gif">GIFs</button>
         <button class="tab" data-tab="history">History</button>
@@ -372,9 +483,12 @@
 
       <!-- ── Library ── -->
       <section class="panel" id="library-panel">
-        <div id="situation-filter"></div>
+        <div class="lib-bar">
+          <input id="lib-search" class="lc-field" type="text" placeholder="🔍 Search clips…" />
+        </div>
         <div id="library-grid"></div>
-        <div id="library-empty">No clips saved yet — paste a video in Compose and hit ★ Save</div>
+        <div id="library-empty"></div>
+        <div id="lib-drop-hint">＋ Paste a link or drop a video here to save it</div>
       </section>
 
       <!-- ── GIFs ── -->
@@ -389,6 +503,27 @@
         <div class="panel-head"><span>Drop History</span><button id="history-clear-btn">Clear</button></div>
         <div id="history-list"></div>
         <div id="history-empty">No drops sent yet</div>
+      </section>
+
+      <!-- ── Meme Deck ── -->
+      <section class="panel" id="deck-panel">
+        <div class="panel-head">
+          <span>Meme Deck — tap to fire</span>
+          <div class="deck-ctl">
+            <span class="deck-ctl-lbl">Grid</span>
+            <button class="deck-step" id="deck-col-dn">−</button>
+            <span id="deck-cols" class="deck-dim">4</span>
+            <span class="deck-x">cols</span>
+            <button class="deck-step" id="deck-col-up">+</button>
+            <span class="deck-sep">·</span>
+            <button class="deck-step" id="deck-row-dn">−</button>
+            <span id="deck-rows" class="deck-dim">3</span>
+            <span class="deck-x">rows</span>
+            <button class="deck-step" id="deck-row-up">+</button>
+          </div>
+        </div>
+        <div id="deck-grid"></div>
+        <div id="deck-hint"><b>Tap</b> a key to fire · <b>✎</b> to edit · bind a <b>hotkey</b> to fire it mid-game with the window closed</div>
       </section>
 
       <!-- ── Settings ── -->
@@ -474,20 +609,6 @@
     </main>
   </div>
 
-  <!-- Save-to-library modal -->
-  <div class="modal" id="lib-modal">
-    <div class="modal-box">
-      <div class="modal-label">Save clip to library</div>
-      <input id="lib-name-input" type="text" placeholder="Name — e.g. Ronaldo SIUUU" />
-      <div class="modal-label" style="margin-top:2px">Which situation?</div>
-      <div id="lib-situation-pick"></div>
-      <div class="modal-row">
-        <button id="lib-save-ok" class="lc-btn modal-ok">Save</button>
-        <button id="lib-save-cancel" class="modal-cancel">Cancel</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Save favorite modal -->
   <div class="modal" id="fav-modal">
     <div class="modal-box">
@@ -496,6 +617,75 @@
       <div class="modal-row">
         <button id="fav-save-ok" class="lc-btn modal-ok">Save</button>
         <button id="fav-save-cancel" class="modal-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deck button config modal -->
+  <div class="modal" id="deck-modal">
+    <div class="modal-box deck-modal-box">
+      <div class="modal-label" id="deck-modal-title">Configure button</div>
+
+      <div class="deck-form-row">
+        <div class="deck-form-col" style="flex:0 0 64px">
+          <span class="modal-label">Icon</span>
+          <input id="deck-icon" type="text" maxlength="2" placeholder="🎯" />
+        </div>
+        <div class="deck-form-col" style="flex:1">
+          <span class="modal-label">Label</span>
+          <input id="deck-label" type="text" maxlength="18" placeholder="e.g. SIUUU" />
+        </div>
+      </div>
+
+      <span class="modal-label">Meme</span>
+      <select id="deck-clip" class="lc-field"><option value="">— pick a library clip —</option></select>
+      <input id="deck-url" type="text" placeholder="…or paste a link / image / mp4 / gif" />
+      <button id="deck-use-compose" class="deck-mini-btn">⬇ Use current Compose media</button>
+      <div id="deck-media-status" class="deck-media-status"></div>
+
+      <span class="modal-label">Effects</span>
+      <div id="deck-fx" class="chips deck-fx"></div>
+
+      <div class="deck-form-row">
+        <div class="deck-form-col">
+          <span class="modal-label">Size</span>
+          <div class="seg" id="deck-size">
+            <button class="size-chip" data-size="s">S</button>
+            <button class="size-chip active" data-size="m">M</button>
+            <button class="size-chip" data-size="l">L</button>
+            <button class="size-chip" data-size="xl">XL</button>
+          </div>
+        </div>
+        <div class="deck-form-col">
+          <span class="modal-label">Position</span>
+          <div class="anchor-grid" id="deck-anchor">
+            <button class="anchor-btn" data-anchor="top-left"><div class="anchor-dot"></div></button>
+            <div class="anchor-blank"></div>
+            <button class="anchor-btn" data-anchor="top-right"><div class="anchor-dot"></div></button>
+            <div class="anchor-blank"></div>
+            <button class="anchor-btn active" data-anchor="center"><div class="anchor-dot"></div></button>
+            <div class="anchor-blank"></div>
+            <button class="anchor-btn" data-anchor="bottom-left"><div class="anchor-dot"></div></button>
+            <div class="anchor-blank"></div>
+            <button class="anchor-btn" data-anchor="bottom-right"><div class="anchor-dot"></div></button>
+          </div>
+        </div>
+      </div>
+
+      <span class="modal-label">Caption (optional)</span>
+      <input id="deck-caption" type="text" maxlength="60" placeholder="Caption read on the drop…" />
+
+      <span class="modal-label">Hotkey (fires in-game)</span>
+      <div class="deck-hk-row">
+        <input id="deck-hotkey" type="text" readonly placeholder="Click, then press a combo (e.g. Ctrl+Shift+1)" />
+        <button id="deck-hotkey-clear" class="deck-mini-btn">Clear</button>
+      </div>
+      <div id="deck-hotkey-warn" class="deck-hk-warn"></div>
+
+      <div class="modal-row">
+        <button id="deck-save-ok" class="lc-btn modal-ok">Save</button>
+        <button id="deck-save-del" class="modal-cancel deck-del-btn">Delete</button>
+        <button id="deck-save-cancel" class="modal-cancel">Cancel</button>
       </div>
     </div>
   </div>

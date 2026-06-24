@@ -26,12 +26,37 @@ const store = new Store({
     ttsVoice: '',
     snipHotkey: 'CommandOrControl+Shift+S',
     reactHotkey: 'CommandOrControl+Shift+R',
+    // Meme Deck — Stream Deck-style grid of one-tap drops with optional global hotkeys
+    deck: { cols: 4, rows: 3, buttons: [] },
   },
 });
 
 // Local clip library — durable reaction clips saved to disk
 const clipsDir = path.join(app.getPath('userData'), 'clips');
 try { fs.mkdirSync(clipsDir, { recursive: true }); } catch {}
+
+// The server deletes uploaded media after 5 min (see /api/upload-media). Cache each
+// clip's hosted URL and reuse it within that window instead of re-uploading the
+// whole file on every drop/fire. Keyed by clipId → { url, at }.
+const clipUploadCache = new Map();
+const CLIP_URL_TTL = 4 * 60 * 1000;   // 4 min — safety margin under the server's 5
+
+// Upload a saved library clip and return its hosted { url }, reusing a recent
+// upload when one is still alive on the server.
+async function uploadLibraryClip(id) {
+  const entry = getLibrary().find(x => x.id === id);
+  if (!entry) return { error: 'clip not found' };
+
+  const cached = clipUploadCache.get(id);
+  if (cached && (Date.now() - cached.at) < CLIP_URL_TTL) {
+    return { url: cached.url, cached: true };
+  }
+
+  const buf = fs.readFileSync(path.join(clipsDir, entry.file));
+  const res = await uploadMediaBuffer(buf, 'video/mp4');
+  if (res && res.url) clipUploadCache.set(id, { url: res.url, at: Date.now() });
+  return res;
+}
 const DEFAULT_SERVER = 'https://memelord-production-3bbf.up.railway.app';
 
 // clip:// streams saved library videos into the sender (must run before app ready)
@@ -133,11 +158,11 @@ function createSenderWindow() {
   }
 
   senderWindow = new BrowserWindow({
-    width: 760,
-    height: 580,
+    width: 820,
+    height: 640,
     resizable: true,
-    minWidth: 640,
-    minHeight: 520,
+    minWidth: 740,
+    minHeight: 600,
     frame: false,
     alwaysOnTop: false,
     title: 'MemeDrop',
@@ -382,6 +407,19 @@ function registerHotkey() {
       console.error('[hotkey] react erreur:', e.message);
     }
   }
+
+  // Meme Deck — one global hotkey per configured button (fires the drop in-game)
+  const deck = store.get('deck') || {};
+  (deck.buttons || []).forEach((btn) => {
+    if (!btn || !btn.hotkey) return;
+    try {
+      const ok = globalShortcut.register(btn.hotkey, () => { fireDeckButton(btn).catch(() => {}); });
+      if (ok) console.log('[hotkey] deck enregistré:', btn.hotkey, '→', btn.label || btn.id);
+      else    console.warn('[hotkey] deck déjà pris:', btn.hotkey);
+    } catch (e) {
+      console.error('[hotkey] deck erreur:', btn.hotkey, e.message);
+    }
+  });
 }
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
@@ -457,40 +495,96 @@ ipcMain.handle('resolve-link', async (_event, url) => {
   catch (err) { return { error: err.message }; }
 });
 
-ipcMain.handle('send-drop', async (_event, { url, target, caption, effects, audioUrl, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY }) => {
+// Resolve media + POST it to /api/drop. Shared by Compose send and the Meme Deck.
+async function postDrop({ url, target, caption, effects, audioUrl, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY }) {
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+
+  const media = await resolveMedia(url);
+
+  const event = {
+    media,
+    from:         store.get('discordUsername') || null,
+    audio:        audioUrl ? { type: 'voice', url: audioUrl } : null,
+    effects:      effects || [],
+    target:       target  || null,
+    caption:      caption || null,
+    loop:         loop    ?? false,
+    loopDuration: loopDuration || null,
+    loopTimes:    loopTimes || null,
+    trimStart:    trimStart ?? null,
+    trimEnd:      trimEnd ?? null,
+    size:         size    || 'm',
+    positionX:    positionX ?? null,
+    positionY:    positionY ?? null,
+  };
+
+  const res = await fetch(`${serverUrl}/api/drop`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(event),
+  });
+
+  return res.json();
+}
+
+ipcMain.handle('send-drop', async (_event, payload) => {
   try {
-    const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
-
-    const media = await resolveMedia(url);
-
-    const event = {
-      media,
-      from:         store.get('discordUsername') || null,
-      audio:        audioUrl ? { type: 'voice', url: audioUrl } : null,
-      effects:      effects || [],
-      target:       target  || null,
-      caption:      caption || null,
-      loop:         loop    ?? false,
-      loopDuration: loopDuration || null,
-      loopTimes:    loopTimes || null,
-      trimStart:    trimStart ?? null,
-      trimEnd:      trimEnd ?? null,
-      size:         size    || 'm',
-      positionX:    positionX ?? null,
-      positionY:    positionY ?? null,
-    };
-
-    const res = await fetch(`${serverUrl}/api/drop`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(event),
-    });
-
-    return res.json();
+    return await postDrop(payload);
   } catch (err) {
     console.error('[sender] erreur drop:', err.message);
     return { error: err.message };
   }
+});
+
+// ── Meme Deck — one-tap drops, fireable by click or global hotkey ───────────────
+
+// Fire a single deck button: resolve its media (library clip → uploaded URL, or a
+// stored direct URL) and drop it with the button's saved effects/size/position.
+async function fireDeckButton(btn) {
+  if (!btn) return { error: 'no button' };
+  try {
+    let url = btn.url || null;
+
+    // A button bound to a saved library clip reuses its cached upload when fresh,
+    // otherwise uploads once (see uploadLibraryClip / the server's 5-min TTL).
+    if (btn.clipId) {
+      const up = await uploadLibraryClip(btn.clipId);
+      if (up && up.url) url = up.url;
+    }
+
+    if (!url) return { error: 'empty' };
+
+    return await postDrop({
+      url,
+      target:    btn.target  || null,
+      caption:   btn.caption || null,
+      effects:   btn.effects || [],
+      size:      btn.size    || 'm',
+      positionX: btn.positionX ?? null,
+      positionY: btn.positionY ?? null,
+      trimStart: btn.trimStart ?? null,
+      trimEnd:   btn.trimEnd   ?? null,
+      loopTimes: btn.loopTimes ?? null,
+    });
+  } catch (err) {
+    console.error('[deck] fire error:', err.message);
+    return { error: err.message };
+  }
+}
+
+ipcMain.handle('get-deck', () => store.get('deck') || { cols: 4, rows: 3, buttons: [] });
+
+ipcMain.handle('save-deck', (_e, deck) => {
+  store.set('deck', deck);
+  registerHotkey();   // re-bind global hotkeys to the new button set
+  return store.get('deck');
+});
+
+ipcMain.handle('fire-deck', async (_e, id) => {
+  const deck = store.get('deck') || {};
+  const btn  = (deck.buttons || []).find(b => b.id === id);
+  if (!btn) return { error: 'not found' };
+  return fireDeckButton(btn);
 });
 
 ipcMain.handle('upload-audio', async (_event, audioBuffer) => {
@@ -593,10 +687,18 @@ ipcMain.handle('library-save-buffer', async (_e, { buffer, name, situation }) =>
   }
 });
 
+ipcMain.handle('library-rename', (_e, { id, name }) => {
+  const lib = getLibrary();
+  const entry = lib.find(x => x.id === id);
+  if (entry) { entry.name = (name || 'Clip').slice(0, 60); store.set('library', lib); }
+  return lib;
+});
+
 ipcMain.handle('library-delete', (_e, id) => {
   const lib = getLibrary();
   const entry = lib.find(x => x.id === id);
   if (entry) { try { fs.unlinkSync(path.join(clipsDir, entry.file)); } catch {} }
+  clipUploadCache.delete(id);
   const next = lib.filter(x => x.id !== id);
   store.set('library', next);
   return next;
@@ -605,14 +707,7 @@ ipcMain.handle('library-delete', (_e, id) => {
 // Upload a saved clip to the server so it can be dropped (returns { url }).
 ipcMain.handle('library-upload', async (_e, id) => {
   try {
-    const entry = getLibrary().find(x => x.id === id);
-    if (!entry) return { error: 'clip not found' };
-    const buf = fs.readFileSync(path.join(clipsDir, entry.file));
-    const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
-    const res = await fetch(`${serverUrl}/api/upload-media`, {
-      method: 'POST', headers: { 'Content-Type': 'video/mp4' }, body: buf,
-    });
-    return res.json();
+    return await uploadLibraryClip(id);
   } catch (err) {
     console.error('[library] upload error:', err.message);
     return { error: err.message };
