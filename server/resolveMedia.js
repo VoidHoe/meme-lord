@@ -7,7 +7,7 @@ async function resolveMedia(url, fetchImpl = fetch) {
   const clean = url.trim();
   const tiktokMatch  = clean.match(/tiktok\.com\/@[\w.]+\/video\/(\d+)/);
   const twitterMatch = clean.match(/(?:twitter\.com|x\.com)\/([\w]+)\/status\/(\d+)/);
-  const youtubeMatch = clean.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/);
+  const youtubeMatch = clean.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]+)/);
   let media = null;
 
   if (tiktokMatch) {

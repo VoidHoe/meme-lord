@@ -499,7 +499,7 @@ async function applyPastedUrl() {
     return;
   }
 
-  if (/(?:youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/.test(v)) {
+  if (/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)[\w-]+/.test(v)) {
     setMediaUrl(v, '▶️ YouTube video', true, { scrubbable: false }); return;
   }
 

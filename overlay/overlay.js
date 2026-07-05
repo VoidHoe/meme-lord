@@ -230,9 +230,16 @@ async function processQueue() {
     });
     if (event.audio) playAudio(event.audio);
   } else if (isEmbed) {
-    // Play the whole embedded clip (best-effort fixed window)
+    // Play the whole embedded clip (best-effort fixed window).
     if (event.audio) playAudio(event.audio);
-    await sleep(EMBED_FULL_MS);
+    // TikTok's embed is only the fallback when direct-video resolution fails, and
+    // it now shows just a cookie-consent wall with no playback. Cap it to the normal
+    // drop duration so it self-clears instead of pinning the overlay (and blocking
+    // the whole queue) for 2 min. YouTube/Twitter embeds do play → keep the long window.
+    const embedMs = (event.media && event.media.type === 'tiktok')
+      ? (settings.duration || 5000)
+      : EMBED_FULL_MS;
+    await sleep(embedMs);
   } else {
     // image / gif / emoji
     if (event.audio) playAudio(event.audio);
@@ -414,7 +421,7 @@ function waitForMedia(el) {
 }
 
 function extractYoutubeId(url) {
-  const match = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/);
+  const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([^&?/]+)/);
   return match ? match[1] : '';
 }
 

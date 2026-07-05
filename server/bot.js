@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const { isValidSound } = require('./sounds');
 const { resolveAudioUrl } = require('./audioProxy');
 
-const YOUTUBE_RE = /https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/;
+const YOUTUBE_RE = /https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)[\w-]+/;
 const TIKTOK_RE = /https?:\/\/(www\.)?tiktok\.com\/.+/;
 const DIRECT_MEDIA_RE = /https?:\/\/.+\.(jpg|jpeg|png|gif|webp|mp4|webm)(\?.*)?$/i;
 const VOICE_MESSAGE_FLAG = 8192;
