@@ -716,10 +716,10 @@ app.whenReady().then(() => {
   // Vérifier les mises à jour (seulement en production, pas en dev)
   if (app.isPackaged) autoUpdater.checkForUpdatesAndNotify();
 
-  // Tray icon
-  const icon = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABmJLR0QA/wD/AP+gvaeTAAAAMklEQVQ4jWNgGAWkAv8JMIwaMGrAqAGDxwBCBpAcQMh7lAwhZMCQC+GgAdQ2AAAGIiQAAQc63gAAAABJRU5ErkJggg=='
-  );
+  // Tray icon (the real app icon, resized for the Windows notification area).
+  const icon = nativeImage
+    .createFromPath(path.join(__dirname, 'assets', 'icon.png'))
+    .resize({ width: 16, height: 16 });
   tray = new Tray(icon);
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Send Drop',  click: () => createSenderWindow()      },
