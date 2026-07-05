@@ -12,5 +12,4 @@ contextBridge.exposeInMainWorld('memedrop', {
   onDrop:           (cb) => ipcRenderer.on('drop',             (_e, data)     => cb(data)),
   onSettingsChanged:(cb) => ipcRenderer.on('settings-changed', (_e, settings) => cb(settings)),
   onUpdateStatus:   (cb) => ipcRenderer.on('update-status',   (_e, msg)      => cb(msg)),
-  onReaction:       (cb) => ipcRenderer.on('reaction',        (_e, data)     => cb(data)),
 });

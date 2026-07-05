@@ -45,10 +45,6 @@
       background: var(--accent); box-shadow: 0 0 10px var(--accent);
     }
     .tab-icon { font-size: 15px; padding: 8px 11px; }
-    #clout-hud { margin-left: auto; margin-right: 10px; display: flex; align-items: center; gap: 5px; font-family: var(--font-ui); font-size: 12.5px; font-weight: 600; letter-spacing: .5px; color: var(--muted); padding: 5px 11px; border: 1px solid var(--line-soft); background: rgba(28,158,255,.06); clip-path: var(--cut-sm); white-space: nowrap; }
-    #clout-hud b { color: var(--accent-bright); font-weight: 800; }
-    #clout-hud #clout-rank { color: var(--head); text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
-    #clout-hud.hidden { display: none; }
     .winctl { -webkit-app-region: no-drag; display: flex; gap: 6px; flex-shrink: 0; margin-left: auto; }
     .winctl button {
       width: 28px; height: 28px; border: 1px solid var(--line); background: var(--panel-2);
@@ -145,9 +141,6 @@
     }
     .chip:hover { color: var(--accent-bright); border-color: var(--accent); }
     .chip.active { background: rgba(28,158,255,.15); border-color: var(--accent); color: var(--accent-bright); }
-    .chip.locked { color: var(--faint); background: rgba(255,255,255,.02); }
-    .chip.locked:hover { color: var(--muted); border-color: var(--accent); }
-    .chip.locked::after { content: ' 🔒' attr(data-cost); color: var(--accent); font-weight: 800; font-size: 10px; }
 
     /* trim */
     #trim-row.disabled { opacity: .4; pointer-events: none; }
@@ -175,8 +168,6 @@
     .size-chip { position: relative; width: 30px; text-align: center; padding: 0; font-weight: 800; font-size: 12px; color: var(--muted); cursor: pointer; border: none; background: none; font-family: inherit; transition: all .15s; }
     .size-chip:hover { color: var(--text); }
     .size-chip.active { background: linear-gradient(135deg,var(--accent),var(--accent-deep)); color: #fff; }
-    .size-chip.locked { color: var(--faint); }
-    .size-chip.locked::after { content: '🔒'; position: absolute; top: -6px; right: -3px; font-size: 9px; }
     .anchor-grid { display: grid; grid-template-columns: repeat(3,16px); grid-template-rows: repeat(3,16px); gap: 3px; flex-shrink: 0; align-self: center; }
     .anchor-btn { width: 16px; height: 16px; background: rgba(6,20,34,.6); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .15s; padding: 0; }
     .anchor-btn:hover { border-color: var(--accent); }
@@ -384,7 +375,6 @@
         <button class="tab" data-tab="history">History</button>
         <button class="tab tab-icon" data-tab="settings" title="Settings">⚙</button>
       </nav>
-      <div id="clout-hud" class="hidden" title="Your Clout &amp; rank">🪙 <b id="clout-amount">—</b> · <span id="clout-rank">—</span></div>
       <div class="winctl">
         <button id="min-btn" title="Minimize">—</button>
         <button id="close-btn" title="Close">✕</button>
@@ -569,16 +559,6 @@
             <option value="">🚫 Off</option>
           </select>
           <div class="set-hint">Press it anywhere → drag a box → the snip drops straight into Compose.</div>
-        </div>
-        <div class="set-field">
-          <label>💥 React hotkey</label>
-          <select id="reactHotkey" class="lc-field">
-            <option value="CommandOrControl+Shift+R">Ctrl + Shift + R (default)</option>
-            <option value="CommandOrControl+Shift+E">Ctrl + Shift + E</option>
-            <option value="Alt+R">Alt + R</option>
-            <option value="">🚫 Off</option>
-          </select>
-          <div class="set-hint">Press it when someone drops on you → pick an emoji → it flies back at them.</div>
         </div>
         <div class="set-field">
           <label>🎙️ Caption voice (free, no key)</label>

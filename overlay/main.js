@@ -25,7 +25,6 @@ const store = new Store({
     library: [],
     ttsVoice: '',
     snipHotkey: 'CommandOrControl+Shift+S',
-    reactHotkey: 'CommandOrControl+Shift+R',
     // Meme Deck — Stream Deck-style grid of one-tap drops with optional global hotkeys
     deck: { cols: 4, rows: 3, buttons: [] },
   },
@@ -68,12 +67,9 @@ let overlayWindow    = null;
 let settingsWindow   = null;
 let senderWindow     = null;
 let snipWindow       = null;
-let reactWindow      = null;
 let tray             = null;
 let socketClient     = null;
 let overlayRaiseTimer = null;
-let lastDropper      = null;   // who most recently dropped on me (for reactions)
-let lastDropId       = null;
 
 // Only allow one MemeDrop at a time. Two instances (e.g. the installed app plus
 // a dev build) would each receive every drop and play its audio/TTS twice.
@@ -262,70 +258,6 @@ ipcMain.on('snip-region', async (_e, bytes) => {
   }
 });
 
-// ── Reactions ─────────────────────────────────────────────────────────────────
-
-function closeReactWindow() { if (reactWindow && !reactWindow.isDestroyed()) reactWindow.close(); }
-
-function openReactPicker() {
-  if (reactWindow && !reactWindow.isDestroyed()) { reactWindow.focus(); return; }
-  reactWindow = new BrowserWindow({
-    width: 344, height: 150,
-    frame: false, transparent: false, alwaysOnTop: true, skipTaskbar: true,
-    resizable: false, movable: false,
-    webPreferences: { preload: path.join(__dirname, 'react-preload.js'), contextIsolation: true },
-  });
-  reactWindow.setAlwaysOnTop(true, 'screen-saver');
-  reactWindow.loadFile(path.join(__dirname, 'react.html'));
-  reactWindow.webContents.once('did-finish-load', () => {
-    if (!reactWindow || reactWindow.isDestroyed()) return;
-    reactWindow.webContents.send('react-init', { lastDropper });
-    reactWindow.focus();
-  });
-  reactWindow.on('closed', () => { reactWindow = null; });
-}
-
-ipcMain.on('react-pick', (_e, { emoji } = {}) => {
-  if (emoji && lastDropper && socketClient) {
-    socketClient.emit('react', {
-      from:   store.get('discordUsername') || null,
-      to:     lastDropper,
-      dropId: lastDropId,
-      emoji,
-    });
-  }
-  closeReactWindow();
-});
-ipcMain.on('react-cancel', closeReactWindow);
-
-// ── Clout economy proxies (renderer can't hit the server cross-origin) ──────────
-
-ipcMain.handle('get-player', async () => {
-  try {
-    const me = store.get('discordUsername');
-    if (!me) return { error: 'no-username' };
-    const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
-    const res = await fetch(`${serverUrl}/api/player?username=${encodeURIComponent(me)}`);
-    return res.json();
-  } catch (err) {
-    return { error: err.message };
-  }
-});
-
-ipcMain.handle('unlock-item', async (_e, itemId) => {
-  try {
-    const me = store.get('discordUsername');
-    if (!me) return { error: 'no-username' };
-    const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
-    const res = await fetch(`${serverUrl}/api/unlock`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: me, itemId }),
-    });
-    return res.json();
-  } catch (err) {
-    return { error: err.message };
-  }
-});
-
 // ── Socket ────────────────────────────────────────────────────────────────────
 
 function connectSocket() {
@@ -346,21 +278,9 @@ function connectSocket() {
   });
 
   socketClient.on('drop', (event) => {
-    // Remember who dropped on us so a reaction can fly back to them.
-    if (event && event.from) { lastDropper = event.from; lastDropId = event.dropId || null; }
     if (overlayWindow && !overlayWindow.isDestroyed()) {
       overlayWindow.webContents.send('drop', event);
     }
-  });
-
-  // A reaction landed on one of our drops → show it on the overlay.
-  socketClient.on('reaction', (data) => {
-    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.webContents.send('reaction', data);
-  });
-
-  // Our Clout balance changed (e.g. we earned from a reaction) → update the HUD.
-  socketClient.on('clout-update', (data) => {
-    if (senderWindow && !senderWindow.isDestroyed()) senderWindow.webContents.send('clout-update', data);
   });
 
   socketClient.on('disconnect', () => console.log('[socket] déconnecté'));
@@ -394,17 +314,6 @@ function registerHotkey() {
       console.log('[hotkey] snip enregistré:', snipKey);
     } catch (e) {
       console.error('[hotkey] snip erreur:', e.message);
-    }
-  }
-
-  // Raccourci réaction (par défaut Ctrl+Shift+R, configurable, vide = off)
-  const reactKey = store.get('reactHotkey');
-  if (reactKey) {
-    try {
-      globalShortcut.register(reactKey, openReactPicker);
-      console.log('[hotkey] react enregistré:', reactKey);
-    } catch (e) {
-      console.error('[hotkey] react erreur:', e.message);
     }
   }
 

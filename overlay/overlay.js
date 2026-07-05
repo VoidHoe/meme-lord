@@ -36,40 +36,6 @@ window.memedrop.onDrop(event => {
   if (!isPlaying) processQueue();
 });
 
-window.memedrop.onReaction(showReaction);
-
-// Show a giant floating reaction emoji + the reactor's name, top-center.
-// Independent of the drop queue: reactions can land any time (even mid-drop),
-// so each call builds its own self-cleaning element appended to <body>.
-let _reactionStack = 0;
-function showReaction({ from, emoji } = {}) {
-  if (!emoji) return;
-  const el = document.createElement('div');
-  el.className = 'reaction-pop';
-
-  // Slight vertical offset so rapid-fire reactions don't perfectly overlap.
-  const slot = _reactionStack % 4;
-  _reactionStack++;
-  el.style.marginTop = (slot * 40) + 'px';
-
-  const emo = document.createElement('div');
-  emo.className = 'reaction-emoji';
-  emo.textContent = emoji;
-  el.appendChild(emo);
-
-  if (from) {
-    const name = document.createElement('div');
-    name.className = 'reaction-name';
-    name.textContent = from;
-    el.appendChild(name);
-  }
-
-  document.body.appendChild(el);
-  // Total lifetime ~2.5s (pop-in + hold + fade-out handled by the CSS animation),
-  // then remove the element. A small buffer guards against animationend not firing.
-  setTimeout(() => { el.remove(); }, 2700);
-}
-
 // Normalize the rendered size: scale media to fill its box on the dominant axis,
 // keeping aspect ratio (small media is upscaled). Runs after the media has loaded
 // so natural dimensions are known. Embeds (iframes) keep their fixed dimensions.
