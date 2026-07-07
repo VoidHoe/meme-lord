@@ -405,7 +405,7 @@ ipcMain.handle('resolve-link', async (_event, url) => {
 });
 
 // Resolve media + POST it to /api/drop. Shared by Compose send and the Meme Deck.
-async function postDrop({ url, target, caption, effects, audioUrl, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY }) {
+async function postDrop({ url, target, caption, captionTop, captionBottom, effects, audioUrl, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY }) {
   const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
 
   const media = await resolveMedia(url);
@@ -417,6 +417,8 @@ async function postDrop({ url, target, caption, effects, audioUrl, loop, loopDur
     effects:      effects || [],
     target:       target  || null,
     caption:      caption || null,
+    captionTop:   captionTop    || null,
+    captionBottom: captionBottom || null,
     loop:         loop    ?? false,
     loopDuration: loopDuration || null,
     loopTimes:    loopTimes || null,

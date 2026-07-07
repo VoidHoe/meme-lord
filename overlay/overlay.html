@@ -112,6 +112,40 @@
     .fx-glow    { animation: fx-glow 1.4s ease-in-out infinite; }
     .fx-flash   { animation: fx-flash .5s ease; }
 
+    /* Classic Impact meme: white outlined text laid over the image, top + bottom. */
+    .impact-frame {
+      position: relative;
+      line-height: 0;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 0 22px rgba(28,158,255,.28), 0 8px 30px rgba(0,0,0,.5);
+    }
+    .impact-frame img,
+    .impact-frame video {
+      display: block;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .impact-text {
+      position: absolute;
+      left: 0; right: 0;
+      text-align: center;
+      font-family: 'Impact', 'Arial Narrow Bold', 'Arial Black', sans-serif;
+      font-size: 34px;
+      font-weight: 400;
+      color: #fff;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      line-height: 1.05;
+      padding: 0 10px;
+      box-sizing: border-box;
+      word-break: break-word;
+      -webkit-text-stroke: 2px #000;
+      text-shadow: 2px 2px 0 #000, -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000;
+    }
+    .impact-top    { top: 10px; }
+    .impact-bottom { bottom: 10px; }
+
     .drop-caption {
       font-family: var(--font-ui);
       background: rgba(7,13,21,.82);

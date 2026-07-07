@@ -59,6 +59,17 @@ function applySize(mediaEl, size) {
   container.style.maxWidth = w + 'px';
 }
 
+// Shrink a meme text block until it fits within maxH (a band of the image height),
+// so a long caption scales down instead of covering the whole image.
+function fitMemeText(el, startPx, maxH) {
+  let size = startPx;
+  el.style.fontSize = size + 'px';
+  while (el.scrollHeight > maxH && size > 11) {
+    size -= 1;
+    el.style.fontSize = size + 'px';
+  }
+}
+
 // ── Loudness normalization (Web Audio) ─────────────────────────────────────────
 // Route audio through a compressor + makeup gain so quiet clips get louder and
 // loud ones get tamed. Web Audio would SILENCE cross-origin media that isn't
@@ -162,6 +173,14 @@ async function processQueue() {
   const fxList  = event.effects || [];
   const hasFade = fxList.includes('fade');
 
+  // Classic Impact meme: two lines of white outlined text laid over the image,
+  // one at the top and one at the bottom. Falls back to a single bottom line for
+  // older/mobile/deck drops that only carry `caption`.
+  const isImageDrop = !!event.media && (event.media.type === 'image' || event.media.type === 'gif');
+  const capTop      = isImageDrop ? (event.captionTop || null) : null;
+  const capBottom   = isImageDrop ? (event.captionBottom || (event.captionTop ? null : event.caption) || null) : null;
+  const memeCaption = isImageDrop && (capTop || capBottom);
+
   let mediaEl = null;
   let entranceLayer = null;   // receives the one-shot entrance transform at reveal time
   if (event.media) {
@@ -172,7 +191,27 @@ async function processQueue() {
       // transform can run together without fighting over `transform`.
       entranceLayer = document.createElement('div'); entranceLayer.className = 'fx-layer';
       const emphasisLayer = document.createElement('div'); emphasisLayer.className = 'fx-layer';
-      entranceLayer.appendChild(mediaEl);
+
+      // The unit that receives entrance/emphasis fx is the whole meme frame when
+      // captioned, so the image + overlaid text animate together as one.
+      let unit = mediaEl;
+      const memeTextEls = [];
+      if (memeCaption) {
+        const frame = document.createElement('div');
+        frame.className = 'impact-frame';
+        frame.appendChild(mediaEl);
+        [['impact-top', capTop], ['impact-bottom', capBottom]].forEach(([pos, txt]) => {
+          if (!txt) return;
+          const el = document.createElement('div');
+          el.className = 'impact-text ' + pos;
+          el.textContent = txt;
+          frame.appendChild(el);
+          memeTextEls.push(el);
+        });
+        unit = frame;
+      }
+
+      entranceLayer.appendChild(unit);
       emphasisLayer.appendChild(entranceLayer);
       fxList.forEach(name => {
         if (FX_EMPHASIS.includes(name))    emphasisLayer.classList.add('fx-' + name);
@@ -181,16 +220,29 @@ async function processQueue() {
       container.appendChild(emphasisLayer);
       await waitForMedia(mediaEl);
       applySize(mediaEl, dropSize);   // normalize size once natural dims are known
+
+      // Keep each meme text inside a band at most ~40% of the image height so it
+      // never covers the whole image; shrink the font to fit long captions.
+      if (memeTextEls.length) {
+        const startPx = Math.max(16, Math.min(46, Math.round((mediaEl.offsetWidth  || 0) * 0.11)));
+        const bandH   = Math.max(24,             Math.round((mediaEl.offsetHeight || 0) * 0.40));
+        memeTextEls.forEach(el => fitMemeText(el, startPx, bandH));
+      }
     }
   }
 
-  if (event.caption) {
+  // Legacy floating pill for non-image drops (videos, embeds, emoji) or drops
+  // that still carry a single caption instead of top/bottom meme text.
+  if (event.caption && !memeCaption) {
     const cap = document.createElement('div');
     cap.className = 'drop-caption';
     cap.textContent = event.caption;
     container.appendChild(cap);
-    speakCaption(event.caption);
   }
+
+  // Read whatever text the drop carries aloud.
+  const spoken = event.caption || [capTop, capBottom].filter(Boolean).join(' ') || null;
+  if (spoken) speakCaption(spoken);
 
   applyPosition(dropX, dropY);
 

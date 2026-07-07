@@ -97,7 +97,7 @@ app.post('/api/send-auth', (req, res) => {
 
 // API drop directe (depuis l'overlay app OU la page mobile, sans passer par Discord)
 app.post('/api/drop', async (req, res) => {
-  const { media, mediaUrl, audio, effects, target, caption, positionX, positionY,
+  const { media, mediaUrl, audio, effects, target, caption, captionTop, captionBottom, positionX, positionY,
           loop, loopDuration, loopTimes, trimStart, trimEnd, size, from } = req.body;
 
   // La page mobile envoie une URL brute (mediaUrl) ; on la résout côté serveur.
@@ -116,6 +116,8 @@ app.post('/api/drop', async (req, res) => {
     effects:      effects   || [],
     target:       target    || null,
     caption:      caption   || null,
+    captionTop:   captionTop    || null,
+    captionBottom: captionBottom || null,
     positionX:    positionX ?? null,
     positionY:    positionY ?? null,
     loop:         loop      ?? false,

@@ -38,6 +38,7 @@ const urlPaste    = document.getElementById('url-paste');
 const targetSel   = document.getElementById('target');
 const refreshBtn  = document.getElementById('refresh-btn');
 const capInput    = document.getElementById('caption');
+const capBottomInput = document.getElementById('caption-bottom');
 const sendBtn     = document.getElementById('send-btn');
 const statusEl    = document.getElementById('status');
 const advanced    = document.getElementById('advanced');
@@ -175,6 +176,8 @@ async function resendHistoryEntry(entry, btn) {
       url:          entry.media?.url || null,
       target:       null,
       caption:      entry.caption,
+      captionTop:   entry.captionTop    ?? null,
+      captionBottom: entry.captionBottom ?? null,
       effects:      entry.effects      || [],
       audioUrl:     null,
       loop:         entry.loop         || false,
@@ -527,6 +530,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 capInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+capBottomInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
 
 // ── Send ──────────────────────────────────────────────────────────────────────
 sendBtn.addEventListener('click', send);
@@ -535,7 +539,10 @@ async function send() {
   await applyPastedUrl();
   const url          = mediaUrl || null;
   const target       = targetSel.value || null;
-  const caption      = capInput.value.trim() || null;
+  const captionTop   = capInput.value.trim() || null;
+  const captionBottom = capBottomInput.value.trim() || null;
+  // Combined line drives TTS and the legacy caption pill on non-image drops.
+  const caption      = [captionTop, captionBottom].filter(Boolean).join(' ') || null;
   const effects      = [...activeEffects];
 
   const wantRepeat  = trimScrubbable && trimRepeat > 1;
@@ -552,7 +559,7 @@ async function send() {
     setStatus('Sending…');
     const drop = effectiveDrop();
     const result = await window.sender.sendDrop({
-      url, target, caption, effects, audioUrl: null,
+      url, target, caption, captionTop, captionBottom, effects, audioUrl: null,
       loop: false,
       loopDuration: null,
       loopTimes: loopTimesVal,
@@ -577,6 +584,8 @@ async function send() {
         timestamp:    Date.now(),
         media:        url ? { type: mediaType, url } : null,
         caption,
+        captionTop,
+        captionBottom,
         size:         drop.size,
         positionX:    drop.positionX,
         positionY:    drop.positionY,
@@ -674,7 +683,7 @@ document.getElementById('fav-name-input').addEventListener('keydown', (e) => {
 function setStatus(msg, cls = '') { statusEl.textContent = msg; statusEl.className = cls; }
 
 function resetForm() {
-  clearMedia(); urlPaste.value = ''; capInput.value = '';
+  clearMedia(); urlPaste.value = ''; capInput.value = ''; capBottomInput.value = '';
   targetSel.value = '';
   activeEffects.clear();
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
