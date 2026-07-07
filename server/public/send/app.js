@@ -29,7 +29,8 @@ const previewImg  = document.getElementById('preview-img');
 const previewVid  = document.getElementById('preview-vid');
 const fileClear   = document.getElementById('file-clear');
 const urlInput    = document.getElementById('url-input');
-const captionInput= document.getElementById('caption-input');
+const topInput    = document.getElementById('top-input');
+const bottomInput = document.getElementById('bottom-input');
 const targetSelect= document.getElementById('target-select');
 const refreshBtn  = document.getElementById('refresh-btn');
 const sizeChips   = document.getElementById('size-chips');
@@ -177,7 +178,10 @@ async function uploadFile(file) {
 sendBtn.addEventListener('click', send);
 async function send() {
   const url     = urlInput.value.trim();
-  const caption = captionInput.value.trim() || null;
+  const captionTop    = topInput.value.trim() || null;
+  const captionBottom = bottomInput.value.trim() || null;
+  // Combined line drives TTS + the caption pill on non-image drops.
+  const caption = [captionTop, captionBottom].filter(Boolean).join(' ') || null;
   const target  = targetSelect.value || null;
   const pos     = ANCHOR_MAP[selectedAnchor] || ANCHOR_MAP.center;
 
@@ -191,7 +195,7 @@ async function send() {
     // File takes precedence; send a resolved media object. Otherwise hand the raw
     // URL to the server (it resolves TikTok/Twitter/YouTube/direct links).
     const body = {
-      caption, target,
+      caption, captionTop, captionBottom, target,
       size: selectedSize,
       positionX: pos.positionX,
       positionY: pos.positionY,
@@ -228,7 +232,8 @@ async function send() {
 function resetForm() {
   clearFile();
   urlInput.value = '';
-  captionInput.value = '';
+  topInput.value = '';
+  bottomInput.value = '';
   // size / position / target stay sticky for the next quick drop
 }
 
