@@ -187,6 +187,7 @@ async function processQueue() {
   const capTop      = canOverlayCaption ? (event.captionTop || null) : null;
   const capBottom   = canOverlayCaption ? (event.captionBottom || (event.captionTop ? null : event.caption) || null) : null;
   const memeCaption = canOverlayCaption && (capTop || capBottom);
+  const captionStyle = event.captionStyle === 'card' ? 'card' : 'overlay';
 
   let mediaEl = null;
   let entranceLayer = null;   // receives the one-shot entrance transform at reveal time
@@ -205,16 +206,25 @@ async function processQueue() {
       const memeTextEls = [];
       if (memeCaption) {
         const frame = document.createElement('div');
-        frame.className = 'impact-frame';
-        frame.appendChild(mediaEl);
-        [['impact-top', capTop], ['impact-bottom', capBottom]].forEach(([pos, txt]) => {
-          if (!txt) return;
+        frame.className = captionStyle === 'card' ? 'impact-frame caption-card' : 'impact-frame';
+        if (captionStyle === 'card') {
           const el = document.createElement('div');
-          el.className = 'impact-text ' + pos;
-          el.textContent = txt;
+          el.className = 'impact-card-text';
+          el.textContent = [capTop, capBottom].filter(Boolean).join(' ');
           frame.appendChild(el);
           memeTextEls.push(el);
-        });
+        }
+        frame.appendChild(mediaEl);
+        if (captionStyle !== 'card') {
+          [['impact-top', capTop], ['impact-bottom', capBottom]].forEach(([pos, txt]) => {
+            if (!txt) return;
+            const el = document.createElement('div');
+            el.className = 'impact-text ' + pos;
+            el.textContent = txt;
+            frame.appendChild(el);
+            memeTextEls.push(el);
+          });
+        }
         unit = frame;
       }
 

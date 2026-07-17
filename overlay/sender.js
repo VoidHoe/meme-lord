@@ -10,6 +10,7 @@ let trimDragging = null;
 let previewStop = null;
 let selectedAnchor = 'center';
 let selectedSize = 'm';
+let selectedCaptionStyle = 'overlay';
 let libraryCache = [];
 let librarySearch = '';
 
@@ -177,11 +178,25 @@ function fadeValue(toggle, input) {
 }
 
 function updatePreviewCaptions() {
-  previewTop.textContent = capInput.value.trim();
-  previewBottom.textContent = capBottomInput.value.trim();
+  const top = capInput.value.trim();
+  const bottom = capBottomInput.value.trim();
+  dropZone.classList.toggle('caption-card', selectedCaptionStyle === 'card');
+  if (selectedCaptionStyle === 'card') {
+    previewTop.textContent = [top, bottom].filter(Boolean).join(' ');
+    previewBottom.textContent = '';
+    return;
+  }
+  previewTop.textContent = top;
+  previewBottom.textContent = bottom;
 }
 capInput.addEventListener('input', updatePreviewCaptions);
 capBottomInput.addEventListener('input', updatePreviewCaptions);
+
+document.querySelectorAll('.style-chip').forEach((button) => button.addEventListener('click', () => {
+  selectedCaptionStyle = button.dataset.captionStyle === 'card' ? 'card' : 'overlay';
+  document.querySelectorAll('.style-chip').forEach((chip) => chip.classList.toggle('active', chip === button));
+  updatePreviewCaptions();
+}));
 
 function formatClock(seconds) {
   const value = Math.max(0, seconds || 0);
@@ -419,6 +434,7 @@ async function send() {
     url: mediaUrl,
     target: targetSel.value || null,
     caption, captionTop, captionBottom,
+    captionStyle: selectedCaptionStyle,
     effects: [...activeEffects],
     audioUrl: null,
     fadeInDuration: fadeValue(fadeInEnabled, fadeInDuration),
@@ -461,6 +477,9 @@ function resetForm() {
   document.querySelectorAll('.chip').forEach((chip) => chip.classList.remove('active'));
   fadeInEnabled.checked = false; fadeInDuration.disabled = true;
   fadeOutEnabled.checked = false; fadeOutDuration.disabled = true;
+  selectedCaptionStyle = 'overlay';
+  document.querySelectorAll('.style-chip').forEach((chip) => chip.classList.toggle('active', chip.dataset.captionStyle === 'overlay'));
+  updatePreviewCaptions();
 }
 function setStatus(message, type = '') {
   statusEl.textContent = message;

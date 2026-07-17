@@ -405,7 +405,7 @@ ipcMain.handle('resolve-link', async (_event, url) => {
 });
 
 // Resolve media + POST it to /api/drop from the Compose workspace.
-async function postDrop({ url, target, caption, captionTop, captionBottom, effects, audioUrl, fadeInDuration, fadeOutDuration, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY }) {
+async function postDrop({ url, target, caption, captionTop, captionBottom, captionStyle, effects, audioUrl, fadeInDuration, fadeOutDuration, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY }) {
   const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
 
   const media = await resolveMedia(url);
@@ -419,6 +419,7 @@ async function postDrop({ url, target, caption, captionTop, captionBottom, effec
     caption:      caption || null,
     captionTop:   captionTop    || null,
     captionBottom: captionBottom || null,
+    captionStyle: captionStyle === 'card' ? 'card' : 'overlay',
     fadeInDuration: fadeInDuration ?? null,
     fadeOutDuration: fadeOutDuration ?? null,
     loop:         loop    ?? false,
