@@ -16,7 +16,6 @@ const store = new Store({
     volumeSfx: 80,
     volumeVoice: 100,
     effects: true,
-    giphyApiKey: 'AMwifjHTUcKxrxHdjcDSWqs6uLrCXCNk',
     micDeviceId: '',
     favorites: [],
     anchorPosition: 'center',
@@ -25,10 +24,12 @@ const store = new Store({
     library: [],
     ttsVoice: '',
     snipHotkey: 'CommandOrControl+Shift+S',
-    // Meme Deck — Stream Deck-style grid of one-tap drops with optional global hotkeys
-    deck: { cols: 4, rows: 3, buttons: [] },
   },
 });
+
+// Removed product surfaces: discard obsolete local configuration left by older builds.
+store.delete('deck');
+store.delete('giphyApiKey');
 
 // Local clip library — durable reaction clips saved to disk
 const clipsDir = path.join(app.getPath('userData'), 'clips');
@@ -71,9 +72,10 @@ let tray             = null;
 let socketClient     = null;
 let overlayRaiseTimer = null;
 
-// Only allow one MemeDrop at a time. Two instances (e.g. the installed app plus
-// a dev build) would each receive every drop and play its audio/TTS twice.
-if (!app.requestSingleInstanceLock()) {
+// Only allow one production MemeDrop at a time. Development can opt into a
+// separate visual-test instance without closing the user's installed app.
+const allowDevInstance = !app.isPackaged && process.argv.includes('--dev-multiple');
+if (!allowDevInstance && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -154,11 +156,11 @@ function createSenderWindow() {
   }
 
   senderWindow = new BrowserWindow({
-    width: 820,
-    height: 640,
+    width: 1180,
+    height: 760,
     resizable: true,
-    minWidth: 740,
-    minHeight: 600,
+    minWidth: 960,
+    minHeight: 640,
     frame: false,
     alwaysOnTop: false,
     title: 'MemeDrop',
@@ -317,18 +319,6 @@ function registerHotkey() {
     }
   }
 
-  // Meme Deck — one global hotkey per configured button (fires the drop in-game)
-  const deck = store.get('deck') || {};
-  (deck.buttons || []).forEach((btn) => {
-    if (!btn || !btn.hotkey) return;
-    try {
-      const ok = globalShortcut.register(btn.hotkey, () => { fireDeckButton(btn).catch(() => {}); });
-      if (ok) console.log('[hotkey] deck enregistré:', btn.hotkey, '→', btn.label || btn.id);
-      else    console.warn('[hotkey] deck déjà pris:', btn.hotkey);
-    } catch (e) {
-      console.error('[hotkey] deck erreur:', btn.hotkey, e.message);
-    }
-  });
 }
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
@@ -355,12 +345,22 @@ ipcMain.on('open-settings', () => openSenderTab('settings'));
 async function resolveMedia(url) {
   if (!url || !url.trim()) return null;
   const clean = url.trim();
+  const medalMatch = clean.match(/^https?:\/\/(?:www\.)?medal\.tv\/(?:games\/[^/?#]+\/)?clips?\/[\w-]+/i);
   const tiktokMatch  = clean.match(/tiktok\.com\/@[\w.]+\/video\/(\d+)/);
   const twitterMatch = clean.match(/(?:twitter\.com|x\.com)\/([\w]+)\/status\/(\d+)/);
   const youtubeMatch = clean.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]+)/);
   let media = null;
 
-  if (tiktokMatch) {
+  if (medalMatch) {
+    const r = await fetch(clean, { headers: { 'User-Agent': 'Mozilla/5.0 MemeDrop' } });
+    if (!r.ok) throw new Error(`Medal returned ${r.status}`);
+    const html = await r.text();
+    const meta = html.match(/<meta[^>]+(?:property|name)=["'](?:og:video(?::secure_url)?|twitter:player:stream)["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:video(?::secure_url)?|twitter:player:stream)["']/i);
+    if (!meta?.[1]) throw new Error('This Medal clip is private or unavailable');
+    media = { type: 'video', url: meta[1].replace(/&amp;/g, '&') };
+
+  } else if (tiktokMatch) {
     try {
       const r = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(clean)}`);
       const j = await r.json();
@@ -404,8 +404,8 @@ ipcMain.handle('resolve-link', async (_event, url) => {
   catch (err) { return { error: err.message }; }
 });
 
-// Resolve media + POST it to /api/drop. Shared by Compose send and the Meme Deck.
-async function postDrop({ url, target, caption, captionTop, captionBottom, effects, audioUrl, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY }) {
+// Resolve media + POST it to /api/drop from the Compose workspace.
+async function postDrop({ url, target, caption, captionTop, captionBottom, effects, audioUrl, fadeInDuration, fadeOutDuration, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY }) {
   const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
 
   const media = await resolveMedia(url);
@@ -419,6 +419,8 @@ async function postDrop({ url, target, caption, captionTop, captionBottom, effec
     caption:      caption || null,
     captionTop:   captionTop    || null,
     captionBottom: captionBottom || null,
+    fadeInDuration: fadeInDuration ?? null,
+    fadeOutDuration: fadeOutDuration ?? null,
     loop:         loop    ?? false,
     loopDuration: loopDuration || null,
     loopTimes:    loopTimes || null,
@@ -445,57 +447,6 @@ ipcMain.handle('send-drop', async (_event, payload) => {
     console.error('[sender] erreur drop:', err.message);
     return { error: err.message };
   }
-});
-
-// ── Meme Deck — one-tap drops, fireable by click or global hotkey ───────────────
-
-// Fire a single deck button: resolve its media (library clip → uploaded URL, or a
-// stored direct URL) and drop it with the button's saved effects/size/position.
-async function fireDeckButton(btn) {
-  if (!btn) return { error: 'no button' };
-  try {
-    let url = btn.url || null;
-
-    // A button bound to a saved library clip reuses its cached upload when fresh,
-    // otherwise uploads once (see uploadLibraryClip / the server's 5-min TTL).
-    if (btn.clipId) {
-      const up = await uploadLibraryClip(btn.clipId);
-      if (up && up.url) url = up.url;
-    }
-
-    if (!url) return { error: 'empty' };
-
-    return await postDrop({
-      url,
-      target:    btn.target  || null,
-      caption:   btn.caption || null,
-      effects:   btn.effects || [],
-      size:      btn.size    || 'm',
-      positionX: btn.positionX ?? null,
-      positionY: btn.positionY ?? null,
-      trimStart: btn.trimStart ?? null,
-      trimEnd:   btn.trimEnd   ?? null,
-      loopTimes: btn.loopTimes ?? null,
-    });
-  } catch (err) {
-    console.error('[deck] fire error:', err.message);
-    return { error: err.message };
-  }
-}
-
-ipcMain.handle('get-deck', () => store.get('deck') || { cols: 4, rows: 3, buttons: [] });
-
-ipcMain.handle('save-deck', (_e, deck) => {
-  store.set('deck', deck);
-  registerHotkey();   // re-bind global hotkeys to the new button set
-  return store.get('deck');
-});
-
-ipcMain.handle('fire-deck', async (_e, id) => {
-  const deck = store.get('deck') || {};
-  const btn  = (deck.buttons || []).find(b => b.id === id);
-  if (!btn) return { error: 'not found' };
-  return fireDeckButton(btn);
 });
 
 ipcMain.handle('upload-audio', async (_event, audioBuffer) => {
@@ -536,7 +487,7 @@ ipcMain.handle('get-users', async () => {
     const res = await fetch(`${serverUrl}/api/users`);
     return res.json();
   } catch (err) {
-    return { users: [] };
+    return { users: [], error: err.message };
   }
 });
 
@@ -657,20 +608,6 @@ ipcMain.handle('clear-history', () => {
   return [];
 });
 
-// ── GIF Search (Tenor) ────────────────────────────────────────────────────────
-
-ipcMain.handle('search-gifs', async (_e, query) => {
-  const apiKey = store.get('giphyApiKey') || '';
-  if (!apiKey) return { error: 'no_key' };
-  try {
-    const url = `https://api.giphy.com/v1/gifs/search?q=${encodeURIComponent(query)}&api_key=${apiKey}&limit=12&rating=g`;
-    const res  = await fetch(url);
-    return res.json();
-  } catch (err) {
-    return { error: err.message };
-  }
-});
-
 // Fetch TTS audio (Google Translate / tetyys SAPI4) with a browser UA and return
 // it as a data URL the overlay can play. Free, no key.
 ipcMain.handle('tts-fetch', async (_e, url) => {
@@ -714,6 +651,7 @@ app.whenReady().then(() => {
   createOverlayWindow();
   connectSocket();
   registerHotkey();
+  if (!app.isPackaged && process.argv.includes('--show-sender')) createSenderWindow();
 
   // Vérifier les mises à jour (seulement en production, pas en dev)
   if (app.isPackaged) autoUpdater.checkForUpdatesAndNotify();

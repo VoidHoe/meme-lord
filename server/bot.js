@@ -1,7 +1,9 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const { isValidSound } = require('./sounds');
 const { resolveAudioUrl } = require('./audioProxy');
+const { resolveMedia } = require('./resolveMedia');
 
+const MEDAL_RE = /https?:\/\/(?:www\.)?medal\.tv\/(?:games\/[^/\s]+\/)?clips?\/[\w-]+(?:\?[^\s]*)?/i;
 const YOUTUBE_RE = /https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)[\w-]+/;
 const TIKTOK_RE = /https?:\/\/(www\.)?tiktok\.com\/.+/;
 const DIRECT_MEDIA_RE = /https?:\/\/.+\.(jpg|jpeg|png|gif|webp|mp4|webm)(\?.*)?$/i;
@@ -95,7 +97,7 @@ function parseMessage(message) {
   }
 
   // GIFs depuis le picker Discord (Tenor, Giphy) → envoyés comme embeds
-  if (!media && message.embeds.length > 0) {
+  if (!media && (message.embeds?.length || 0) > 0) {
     for (const embed of message.embeds) {
       if (embed.video?.url) {
         // gifv embed : utiliser le mp4 animé directement (loop géré dans l'overlay)
@@ -117,6 +119,10 @@ function parseMessage(message) {
   }
 
   // URLs dans le contenu
+  if (MEDAL_RE.test(content)) {
+    const url = content.match(MEDAL_RE)[0];
+    return { media: { type: 'medal', url }, audio: null, effects: [], target, caption: null };
+  }
   if (YOUTUBE_RE.test(content)) {
     const url = content.match(YOUTUBE_RE)[0];
     return { media: { type: 'youtube', url }, audio: null, effects: [], target, caption: null };
@@ -158,6 +164,15 @@ function startBot(router) {
 
     if (event.audio?.type === 'voice') {
       event.audio.url = await resolveAudioUrl(event.audio.url, publicUrl);
+    }
+
+    if (event.media?.type === 'medal') {
+      try {
+        event.media = await resolveMedia(event.media.url);
+      } catch (error) {
+        console.error('[bot] medal resolve failed:', error.message);
+        return;
+      }
     }
 
     // Réponse à un message GIF + voice note → combiner les deux

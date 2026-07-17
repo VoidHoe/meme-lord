@@ -1,6 +1,6 @@
 {
   "name": "memedrop-overlay",
-  "version": "1.10.2",
+  "version": "2.0.0",
   "description": "Overlay Discord memes on your screen in real-time",
   "author": "VoidHoe",
   "main": "main.js",
@@ -33,6 +33,7 @@
       "settings.html",
       "settings.js",
       "sender.html",
+      "sender.css",
       "sender.js",
       "sender-preload.js",
       "snip.html",

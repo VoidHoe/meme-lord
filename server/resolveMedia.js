@@ -5,12 +5,22 @@
 async function resolveMedia(url, fetchImpl = fetch) {
   if (!url || !url.trim()) return null;
   const clean = url.trim();
+  const medalMatch = clean.match(/^https?:\/\/(?:www\.)?medal\.tv\/(?:games\/[^/?#]+\/)?clips?\/[\w-]+/i);
   const tiktokMatch  = clean.match(/tiktok\.com\/@[\w.]+\/video\/(\d+)/);
   const twitterMatch = clean.match(/(?:twitter\.com|x\.com)\/([\w]+)\/status\/(\d+)/);
   const youtubeMatch = clean.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]+)/);
   let media = null;
 
-  if (tiktokMatch) {
+  if (medalMatch) {
+    const r = await fetchImpl(clean, { headers: { 'User-Agent': 'Mozilla/5.0 MemeDrop' } });
+    if (!r.ok) throw new Error(`Medal returned ${r.status}`);
+    const html = await r.text();
+    const meta = html.match(/<meta[^>]+(?:property|name)=["'](?:og:video(?::secure_url)?|twitter:player:stream)["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:video(?::secure_url)?|twitter:player:stream)["']/i);
+    if (!meta?.[1]) throw new Error('This Medal clip is private or unavailable');
+    media = { type: 'video', url: meta[1].replace(/&amp;/g, '&') };
+
+  } else if (tiktokMatch) {
     try {
       const r = await fetchImpl(`https://www.tikwm.com/api/?url=${encodeURIComponent(clean)}`);
       const j = await r.json();

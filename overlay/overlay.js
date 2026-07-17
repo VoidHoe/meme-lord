@@ -23,7 +23,7 @@ function sizeBox(size) {
 //  ENTRANCE — one-shot transform, runs on the entrance wrapper at reveal
 //  EMPHASIS — looping transform, runs on the emphasis wrapper the whole time
 //  FILTER   — looping/one-shot CSS filter, runs on the media element itself
-const FX_ENTRANCE = ['spin', 'drop', 'slide', 'zoom', 'flip', 'glitch', 'slam'];
+const FX_ENTRANCE = ['spin', 'drop', 'slide', 'zoom', 'flip', 'glitch', 'slam', 'bounce'];
 const FX_EMPHASIS = ['shake', 'pulse', 'wobble', 'spin-loop', 'float'];
 const FX_FILTER   = ['rainbow', 'glow', 'flash'];
 
@@ -170,8 +170,15 @@ async function processQueue() {
   container.style.maxWidth  = '';
   container.style.maxHeight = '';
 
-  const fxList  = event.effects || [];
-  const hasFade = fxList.includes('fade');
+  const fxList = event.effects || [];
+  const legacyFade = fxList.includes('fade');
+  const clampFade = (value, fallback = null) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.min(5, Math.max(0.1, parsed));
+  };
+  const fadeInSeconds = clampFade(event.fadeInDuration, legacyFade ? 3 : null);
+  const fadeOutSeconds = clampFade(event.fadeOutDuration, legacyFade ? 3 : null);
 
   // Classic Impact meme: two lines of white outlined text laid over the image,
   // one at the top and one at the bottom. Falls back to a single bottom line for
@@ -248,8 +255,8 @@ async function processQueue() {
 
   // Entrance effects + fade — applied on reveal so the animation reads cleanly.
   if (entranceLayer) fxList.forEach(name => { if (FX_ENTRANCE.includes(name)) entranceLayer.classList.add('fx-' + name); });
-  if (hasFade) {
-    container.style.animation = 'fadeIn 3s ease forwards';
+  if (fadeInSeconds) {
+    container.style.animation = `fadeIn ${fadeInSeconds}s ease forwards`;
   }
 
   // Determine playback behavior
@@ -299,9 +306,9 @@ async function processQueue() {
   }
 
   // Fade out
-  if (hasFade) {
-    container.style.animation = 'fadeOut 3s ease forwards';
-    await sleep(3000);
+  if (fadeOutSeconds) {
+    container.style.animation = `fadeOut ${fadeOutSeconds}s ease forwards`;
+    await sleep(fadeOutSeconds * 1000);
   }
 
   container.style.display   = 'none';

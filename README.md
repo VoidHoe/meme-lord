@@ -1,5 +1,7 @@
 # MemeDrop Clone
 
+![MemeDrop cover](docs/assets/memedrop-cover.png)
+
 Overlay Discord pour afficher des mèmes en temps réel sur les écrans de tes potes pendant les sessions gaming.
 
 ## Setup rapide

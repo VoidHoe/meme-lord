@@ -36,6 +36,20 @@ describe('resolveMedia', () => {
     expect(m).toEqual({ type: 'youtube', url });
   });
 
+  test('Medal share link resolves from metadata', async () => {
+    const fetchImpl = async () => ({
+      ok: true,
+      text: async () => '<meta property="og:video" content="https://medal.tv/api/content/abc/socialVideoUrl?v=1&amp;i=2">',
+    });
+    const m = await resolveMedia('https://medal.tv/games/dead-by-daylight/clips/abc?invite=test', fetchImpl);
+    expect(m).toEqual({ type: 'video', url: 'https://medal.tv/api/content/abc/socialVideoUrl?v=1&i=2' });
+  });
+
+  test('Medal unavailable clip throws clear error', async () => {
+    const fetchImpl = async () => ({ ok: true, text: async () => '<html></html>' });
+    await expect(resolveMedia('https://medal.tv/clips/private123', fetchImpl)).rejects.toThrow('private or unavailable');
+  });
+
   test('TikTok résolu → video directe depuis tikwm', async () => {
     const fetchImpl = fakeFetch({ code: 0, data: { play: 'https://cdn.tikwm/v.mp4' } });
     const m = await resolveMedia('https://www.tiktok.com/@user/video/12345', fetchImpl);

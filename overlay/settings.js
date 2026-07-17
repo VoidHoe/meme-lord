@@ -1,5 +1,5 @@
 const ELEVENLABS_KEY = 'sk_699bb98a4c9010efa533de7a75548061a55ce29ae16ecc4c';
-const fields      = ['serverUrl', 'discordUsername', 'duration', 'volumeSfx', 'volumeVoice', 'giphyApiKey', 'elevenLabsVoiceId'];
+const fields      = ['serverUrl', 'discordUsername', 'duration', 'volumeSfx', 'volumeVoice', 'elevenLabsVoiceId'];
 const rangeFields = ['duration', 'volumeSfx', 'volumeVoice'];
 
 window.memedrop.getSettings().then(settings => {

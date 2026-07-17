@@ -1,6 +1,6 @@
 {
   "name": "memedrop",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "engines": { "node": ">=20.0.0" },
   "workspaces": ["server"],
@@ -8,6 +8,6 @@
     "start": "node server/index.js",
     "server": "node server/index.js",
     "overlay": "cd overlay && npm start",
-    "test": "jest --testPathPattern=server/tests"
+    "test": "jest --roots server"
   }
 }
