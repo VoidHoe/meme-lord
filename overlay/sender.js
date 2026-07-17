@@ -1,6 +1,8 @@
 const activeEffects = new Set();
 let mediaUrl = null;
+let mediaPreviewUrl = null;
 let mediaIsVideo = false;
+let stagePreviewVideo = null;
 let trimScrubbable = false;
 let videoDuration = 0;
 let trimStart = 0;
@@ -182,7 +184,9 @@ function updatePreviewCaptions() {
   const bottom = capBottomInput.value.trim();
   dropZone.classList.toggle('caption-card', selectedCaptionStyle === 'card');
   if (selectedCaptionStyle === 'card') {
-    previewTop.textContent = [top, bottom].filter(Boolean).join(' ');
+    const card = stageMedia.querySelector('.stage-card-caption');
+    if (card) card.textContent = [top, bottom].filter(Boolean).join(' ');
+    previewTop.textContent = '';
     previewBottom.textContent = '';
     return;
   }
@@ -195,6 +199,7 @@ capBottomInput.addEventListener('input', updatePreviewCaptions);
 document.querySelectorAll('.style-chip').forEach((button) => button.addEventListener('click', () => {
   selectedCaptionStyle = button.dataset.captionStyle === 'card' ? 'card' : 'overlay';
   document.querySelectorAll('.style-chip').forEach((chip) => chip.classList.toggle('active', chip === button));
+  if (mediaUrl) renderStagePreview(mediaPreviewUrl || mediaUrl, urlText.textContent, mediaIsVideo);
   updatePreviewCaptions();
 }));
 
@@ -215,6 +220,7 @@ function setTrimEnabled(scrubbable, url) {
   trimEditor.style.display = trimScrubbable ? '' : 'none';
   trimVideo.removeAttribute('src');
   trimVideo.load();
+  syncStagePreviewSegment();
   if (!trimScrubbable || !url) return;
   trimVideo.src = url;
   trimVideo.onloadedmetadata = () => {
@@ -233,6 +239,26 @@ function renderTrim() {
   trimRange.style.left = `${startPct}%`;
   trimRange.style.width = `${Math.max(0, endPct - startPct)}%`;
   trimReadout.textContent = `${formatClock(trimStart)} → ${formatClock(trimEnd)} · ${(trimEnd - trimStart).toFixed(1)}s`;
+  syncStagePreviewSegment();
+}
+
+function syncStagePreviewSegment() {
+  if (!stagePreviewVideo) return;
+  const hasSegment = trimScrubbable && videoDuration > 0 && trimEnd > trimStart;
+  stagePreviewVideo.loop = !hasSegment;
+  if (!hasSegment) {
+    stagePreviewVideo.ontimeupdate = null;
+    return;
+  }
+  stagePreviewVideo.ontimeupdate = () => {
+    if (stagePreviewVideo.currentTime >= trimEnd || stagePreviewVideo.currentTime < trimStart - 0.25) {
+      try { stagePreviewVideo.currentTime = trimStart; } catch {}
+      stagePreviewVideo.play().catch(() => {});
+    }
+  };
+  if (stagePreviewVideo.currentTime < trimStart || stagePreviewVideo.currentTime >= trimEnd) {
+    try { stagePreviewVideo.currentTime = trimStart; } catch {}
+  }
 }
 
 function trackToTime(clientX) {
@@ -345,36 +371,56 @@ function renderStagePreview(url, label, isVideo) {
   stagePrompt.style.display = 'none';
   stageMedia.style.display = 'flex';
   stageMedia.innerHTML = '';
+  stagePreviewVideo = null;
+  const appendPreview = (node) => {
+    if (selectedCaptionStyle !== 'card') {
+      stageMedia.appendChild(node);
+      return;
+    }
+    const frame = document.createElement('div');
+    frame.className = 'stage-card-frame';
+    const card = document.createElement('div');
+    card.className = 'stage-card-caption';
+    card.textContent = [capInput.value.trim(), capBottomInput.value.trim()].filter(Boolean).join(' ');
+    frame.append(card, node);
+    stageMedia.appendChild(frame);
+  };
   const fallback = (icon) => {
-    stageMedia.innerHTML = `<div><div class="embed-ic">${icon}</div><span class="embed-label">${label || ''}</span></div>`;
+    const fallbackEl = document.createElement('div');
+    fallbackEl.innerHTML = `<div class="embed-ic">${icon}</div><span class="embed-label">${label || ''}</span>`;
+    appendPreview(fallbackEl);
   };
   if (isEmbedUrl(url)) return fallback('▶');
   if (isVideo) {
     const video = document.createElement('video');
     video.src = url; video.muted = true; video.loop = true; video.autoplay = true; video.playsInline = true;
     video.onerror = () => fallback('▶');
-    stageMedia.appendChild(video);
+    video.onloadedmetadata = syncStagePreviewSegment;
+    stagePreviewVideo = video;
+    appendPreview(video);
+    syncStagePreviewSegment();
     video.play().catch(() => {});
   } else {
     const image = document.createElement('img');
     image.src = url; image.alt = label || 'Meme preview'; image.onerror = () => fallback('▧');
-    stageMedia.appendChild(image);
+    appendPreview(image);
   }
 }
 function setMediaUrl(url, label, isVideo = false, options = {}) {
   mediaUrl = url;
+  mediaPreviewUrl = options.previewUrl || url;
   mediaIsVideo = isVideo;
   urlPaste.value = '';
   dropZone.classList.add('has-media');
   urlText.textContent = label || url;
   clearUrlBtn.style.display = 'block';
   saveClipBtn.style.display = isVideo ? 'block' : 'none';
-  renderStagePreview(url, label, isVideo);
+  renderStagePreview(mediaPreviewUrl, label, isVideo);
   const scrubbable = options.scrubbable ?? (isVideo && !isEmbedUrl(url));
   setTrimEnabled(scrubbable, scrubbable ? (options.previewUrl || url) : null);
 }
 function clearMedia() {
-  mediaUrl = null; mediaIsVideo = false;
+  mediaUrl = null; mediaPreviewUrl = null; mediaIsVideo = false; stagePreviewVideo = null;
   dropZone.classList.remove('has-media');
   stageMedia.style.display = 'none'; stageMedia.innerHTML = '';
   stagePrompt.style.display = '';
