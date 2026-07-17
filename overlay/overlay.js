@@ -180,13 +180,13 @@ async function processQueue() {
   const fadeInSeconds = clampFade(event.fadeInDuration, legacyFade ? 3 : null);
   const fadeOutSeconds = clampFade(event.fadeOutDuration, legacyFade ? 3 : null);
 
-  // Classic Impact meme: two lines of white outlined text laid over the image,
+  // Classic Impact meme: two lines of white outlined text laid over the media,
   // one at the top and one at the bottom. Falls back to a single bottom line for
   // older/mobile/deck drops that only carry `caption`.
-  const isImageDrop = !!event.media && (event.media.type === 'image' || event.media.type === 'gif');
-  const capTop      = isImageDrop ? (event.captionTop || null) : null;
-  const capBottom   = isImageDrop ? (event.captionBottom || (event.captionTop ? null : event.caption) || null) : null;
-  const memeCaption = isImageDrop && (capTop || capBottom);
+  const canOverlayCaption = !!event.media && ['image', 'gif', 'video'].includes(event.media.type);
+  const capTop      = canOverlayCaption ? (event.captionTop || null) : null;
+  const capBottom   = canOverlayCaption ? (event.captionBottom || (event.captionTop ? null : event.caption) || null) : null;
+  const memeCaption = canOverlayCaption && (capTop || capBottom);
 
   let mediaEl = null;
   let entranceLayer = null;   // receives the one-shot entrance transform at reveal time
@@ -238,7 +238,7 @@ async function processQueue() {
     }
   }
 
-  // Legacy floating pill for non-image drops (videos, embeds, emoji) or drops
+  // Legacy floating pill for embeds, emoji or drops
   // that still carry a single caption instead of top/bottom meme text.
   if (event.caption && !memeCaption) {
     const cap = document.createElement('div');
