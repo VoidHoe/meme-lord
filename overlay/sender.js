@@ -65,17 +65,23 @@ const fadeInEnabled = $('fade-in-enabled');
 const fadeOutEnabled = $('fade-out-enabled');
 const fadeInDuration = $('fade-in-duration');
 const fadeOutDuration = $('fade-out-duration');
+const chaseEnabled = $('chase-enabled');
 const chaseBtn = $('chase-btn');
 const chaseDuration = $('chase-duration');
 const chaseHotkey = $('chase-hotkey');
 const chaseMusic = $('chase-music');
 const chaseMusicStart = $('chase-music-start');
 const chaseImport = $('chase-import');
+const chaseCheckpoint = $('chase-checkpoint');
+const chaseSfxImport = $('chase-sfx-import');
+const chaseSfxStatus = $('chase-sfx-status');
+const chaseStatus = $('chase-status');
 
 const PANELS = {
   compose: 'compose-panel',
   library: 'library-panel',
   history: 'history-panel',
+  chase: 'chase-panel',
   settings: 'settings-panel',
 };
 
@@ -85,6 +91,7 @@ function showTab(name) {
   Object.entries(PANELS).forEach(([key, id]) => $(id).classList.toggle('active', key === name));
   if (name === 'library') renderLibrary();
   if (name === 'history') loadHistory();
+  if (name === 'chase') window.sender.getSettings().then(loadChaseSettings);
   if (name === 'settings') loadSettingsForm();
 }
 
@@ -157,16 +164,21 @@ chaseBtn.addEventListener('pointerleave', (event) => {
   if (event.buttons === 1) stopChaseHold(event);
 });
 chaseImport.addEventListener('click', importChaseAudio);
-[chaseDuration, chaseHotkey, chaseMusic, chaseMusicStart].forEach((input) => {
+chaseSfxImport.addEventListener('click', importChaseSfxFolder);
+[chaseEnabled, chaseDuration, chaseHotkey, chaseMusic, chaseMusicStart, chaseCheckpoint].forEach((input) => {
   input.addEventListener('change', saveChaseSettings);
   input.addEventListener('blur', saveChaseSettings);
 });
 
 function loadChaseSettings(settings) {
+  chaseEnabled.checked = !!settings.chaseEnabled;
   chaseDuration.value = settings.chaseDuration ?? 60;
   chaseHotkey.value = settings.chaseHotkey ?? '6';
   chaseMusic.value = settings.chaseMusicUrl || 'https://youtu.be/N_og7Lok8j8';
   chaseMusicStart.value = settings.chaseMusicStart ?? 10;
+  chaseCheckpoint.value = settings.chaseCheckpointSeconds ?? 30;
+  chaseSfxStatus.textContent = settings.chaseSfxDir ? `SFX: ${settings.chaseSfxDir}` : 'No SFX folder';
+  syncChaseEnabledState();
 }
 
 let chaseSaveTimer = null;
@@ -174,12 +186,22 @@ function saveChaseSettings() {
   if (chaseSaveTimer) clearTimeout(chaseSaveTimer);
   chaseSaveTimer = setTimeout(() => {
     window.sender.saveSettings({
+      chaseEnabled: chaseEnabled.checked,
       chaseDuration: chaseSeconds(),
       chaseHotkey: chaseHotkey.value.trim(),
       chaseMusicUrl: chaseMusic.value.trim(),
       chaseMusicStart: chaseMusicStartSeconds(),
+      chaseCheckpointSeconds: chaseCheckpointSeconds(),
+    }).then(() => {
+      syncChaseEnabledState();
+      setChaseStatus(chaseEnabled.checked ? 'Chase mode enabled' : 'Chase mode disabled', chaseEnabled.checked ? 'ok' : '');
     });
   }, 150);
+}
+
+function syncChaseEnabledState() {
+  chaseBtn.disabled = !chaseEnabled.checked;
+  $('chase-panel').classList.toggle('chase-off', !chaseEnabled.checked);
 }
 
 async function importChaseAudio() {
@@ -189,10 +211,24 @@ async function importChaseAudio() {
       chaseMusic.value = result.url;
       chaseMusicStart.value = 0;
       saveChaseSettings();
-      setStatus('Chase audio imported', 'ok');
+      setChaseStatus('Chase audio imported', 'ok');
     }
   } catch (error) {
-    setStatus(`Could not import audio: ${error.message}`, 'err');
+    setChaseStatus(`Could not import audio: ${error.message}`, 'err');
+  }
+}
+
+async function importChaseSfxFolder() {
+  try {
+    const result = await window.sender.chooseChaseSfxFolder();
+    if (result?.dir) {
+      const count = (result.sfx?.checkpoints?.length || 0) + (result.sfx?.start ? 1 : 0);
+      chaseSfxStatus.textContent = `SFX: ${result.dir} (${count} files)`;
+      await window.sender.saveSettings({ chaseSfxDir: result.dir });
+      setChaseStatus(count ? 'Chase SFX folder imported' : 'No audio files found in that folder', count ? 'ok' : 'err');
+    }
+  } catch (error) {
+    setChaseStatus(`Could not import SFX: ${error.message}`, 'err');
   }
 }
 
@@ -204,6 +240,11 @@ function chaseSeconds() {
 function chaseMusicStartSeconds() {
   const value = Number(chaseMusicStart.value);
   return Math.min(600, Math.max(0, Number.isFinite(value) ? value : 10));
+}
+
+function chaseCheckpointSeconds() {
+  const value = Number(chaseCheckpoint.value);
+  return Math.min(180, Math.max(5, Number.isFinite(value) ? value : 30));
 }
 
 function chasePayload(command, id) {
@@ -218,36 +259,30 @@ function chasePayload(command, id) {
       label: 'CHASE',
       sound: 'hype',
       music: musicUrl ? { url: musicUrl, startSeconds: chaseMusicStartSeconds() } : null,
+      checkpointSeconds: chaseCheckpointSeconds(),
     },
   };
 }
 
 async function sendChaseAction(payload) {
-  try {
-    const result = await window.sender.sendDrop(payload);
-    if (!result.ok) throw new Error(result.error || 'Server error');
-    return result;
-  } catch (error) {
-    if (payload.action && window.sender.previewDrop) {
-      const local = await window.sender.previewDrop(payload);
-      if (local.ok) return { ...local, fallbackError: error.message };
-    }
-    throw error;
-  }
+  const result = await window.sender.previewDrop(payload);
+  if (!result.ok) throw new Error(result.error || 'overlay unavailable');
+  return result;
 }
 
 async function startChaseHold(event) {
+  if (!chaseEnabled.checked) return;
   if (chaseHoldId) return;
   event.preventDefault();
   chaseHoldId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   try { chaseBtn.setPointerCapture(event.pointerId); } catch {}
   chaseBtn.classList.add('holding');
-  setStatus('Holding chase timer...');
+  setChaseStatus('Holding chase timer...');
   const payload = chasePayload('start', chaseHoldId);
   saveChaseSettings();
   try {
     const result = await sendChaseAction(payload);
-    setStatus(result.local ? 'Local chase preview' : 'Chase timer live!', 'ok');
+    setChaseStatus(result.local ? 'Local chase preview' : 'Chase timer live!', 'ok');
     window.sender.saveHistory({
       ...payload,
       id: Date.now(),
@@ -255,7 +290,7 @@ async function startChaseHold(event) {
       caption: 'Held chase timer',
     });
   } catch (error) {
-    setStatus(`Could not start timer: ${error.message}`, 'err');
+    setChaseStatus(`Could not start timer: ${error.message}`, 'err');
   }
 }
 
@@ -268,10 +303,15 @@ async function stopChaseHold(event) {
   try { chaseBtn.releasePointerCapture(event.pointerId); } catch {}
   try {
     await sendChaseAction(chasePayload('stop', id));
-    setStatus('Chase stopped', 'ok');
+    setChaseStatus('Chase stopped', 'ok');
   } catch (error) {
-    setStatus(`Could not stop timer: ${error.message}`, 'err');
+    setChaseStatus(`Could not stop timer: ${error.message}`, 'err');
   }
+}
+
+function setChaseStatus(message, type = '') {
+  chaseStatus.textContent = message;
+  chaseStatus.className = type;
 }
 
 document.querySelectorAll('.anchor-btn').forEach((button) => button.addEventListener('click', () => setAnchor(button.dataset.anchor, true)));

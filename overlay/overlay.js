@@ -526,22 +526,23 @@ function startHeldChase(event) {
   kicker.textContent = `${label} STARTED`;
   const clock = document.createElement('div');
   clock.className = 'chase-clock';
-  clock.textContent = '0.0';
+  clock.textContent = formatChaseClock(0);
   const barWrap = document.createElement('div');
   barWrap.className = 'chase-bar';
   const bar = document.createElement('i');
   barWrap.appendChild(bar);
   timer.append(kicker, clock, barWrap);
   document.body.appendChild(timer);
-  positionChaseTimer(timer, event.positionX ?? 50, event.positionY ?? 14);
+  positionChaseTimer(timer, event.positionX ?? 0, event.positionY ?? 0);
 
   const stopAudio = startChaseAudio(seconds, event.action.music);
+  const chaseSfx = startChaseSfx(event.action);
   const start = performance.now();
   let raf = 0;
 
   const tick = () => {
     const elapsed = (performance.now() - start) / 1000;
-    clock.textContent = elapsed.toFixed(1);
+    clock.textContent = formatChaseClock(elapsed);
     bar.style.transform = `scaleX(${Math.min(1, elapsed / seconds)})`;
     raf = requestAnimationFrame(tick);
   };
@@ -551,8 +552,18 @@ function startHeldChase(event) {
     id: event.action.id || null,
     el: timer,
     stopAudio,
+    stopSfx: chaseSfx.stop,
+    endSfxUrl: chaseSfx.endUrl,
     stopTimer: () => cancelAnimationFrame(raf),
   };
+}
+
+function formatChaseClock(seconds) {
+  const totalCentiseconds = Math.max(0, Math.floor(seconds * 100));
+  const minutes = Math.floor(totalCentiseconds / 6000);
+  const secs = Math.floor((totalCentiseconds % 6000) / 100);
+  const centis = totalCentiseconds % 100;
+  return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(centis).padStart(2, '0')}`;
 }
 
 function stopHeldChase(id = null) {
@@ -561,14 +572,25 @@ function stopHeldChase(id = null) {
   const current = activeChase;
   activeChase = null;
   current.stopTimer();
-  current.stopAudio();
+  current.stopSfx();
   current.el.classList.add('done');
-  setTimeout(() => {
+  const finish = () => {
+    current.stopAudio();
     if (current.el.isConnected) current.el.remove();
-  }, 320);
+  };
+  if (current.endSfxUrl) {
+    playChaseSfx(current.endSfxUrl, null, finish);
+  } else {
+    setTimeout(finish, 320);
+  }
 }
 
 function positionChaseTimer(el, px, py) {
+  if (px === 0 && py === 0) {
+    el.style.left = '0';
+    el.style.top = '0';
+    return;
+  }
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const rect = el.getBoundingClientRect();
@@ -576,6 +598,59 @@ function positionChaseTimer(el, px, py) {
   const y = Math.round((py / 100) * vh - rect.height / 2);
   el.style.left = `${Math.min(Math.max(0, x), Math.max(0, vw - rect.width))}px`;
   el.style.top = `${Math.min(Math.max(0, y), Math.max(0, vh - rect.height))}px`;
+}
+
+function startChaseSfx(action) {
+  const timers = [];
+  const playing = new Set();
+  const checkpointEvery = Math.min(180, Math.max(5, Number(action.checkpointSeconds) || 30));
+  const checkpoints = Array.isArray(action.sfx?.checkpoints) ? action.sfx.checkpoints.filter(sfx => sfx?.url) : [];
+
+  if (action.sfx?.start?.url) {
+    playChaseSfx(action.sfx.start.url, playing);
+  }
+
+  if (checkpoints.length) {
+    let index = 0;
+    const playCheckpoint = () => {
+      playChaseSfx(checkpoints[index % checkpoints.length].url, playing);
+      index++;
+    };
+    timers.push(setInterval(playCheckpoint, checkpointEvery * 1000));
+  }
+
+  return {
+    endUrl: action.sfx?.end?.url || null,
+    stop: () => {
+      timers.forEach(clearInterval);
+      playing.forEach((audio) => {
+        try { audio.pause(); audio.src = ''; } catch {}
+      });
+      playing.clear();
+    },
+  };
+}
+
+function playChaseSfx(url, playing = null, onDone = null) {
+  try {
+    const a = new Audio(url);
+    if (playing) playing.add(a);
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      if (playing) playing.delete(a);
+      a.src = '';
+      if (onDone) onDone();
+    };
+    a.volume = Math.min(1, (settings.volumeSfx || 80) / 100 * master());
+    a.onended = cleanup;
+    a.onerror = cleanup;
+    a.play().catch(cleanup);
+  } catch (e) {
+    console.warn('[chase] sfx failed', e);
+    if (onDone) onDone();
+  }
 }
 
 function startChaseAudio(seconds, music) {
@@ -660,17 +735,25 @@ function startChaseSoundtrack(music) {
   }
 
   const a = new Audio(music.url);
-  a.volume = Math.min(1, (settings.volumeSfx || 80) / 100 * master());
-  a.addEventListener('loadedmetadata', () => {
-    try { a.currentTime = startSeconds; } catch {}
-    a.play().catch(() => {});
-  }, { once: true });
-  a.addEventListener('error', () => console.warn('[chase] audio failed', music.url), { once: true });
-  a.load();
-  return () => {
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
     a.pause();
     a.src = '';
   };
+  a.volume = Math.min(1, (settings.volumeSfx || 80) / 100 * master());
+  a.addEventListener('loadedmetadata', () => {
+    if (cleaned) return;
+    try { a.currentTime = startSeconds; } catch {}
+    a.play().catch(cleanup);
+  }, { once: true });
+  a.addEventListener('error', () => {
+    console.warn('[chase] audio failed', music.url);
+    cleanup();
+  }, { once: true });
+  try { a.load(); } catch { cleanup(); }
+  return cleanup;
 }
 
 function waitForMedia(el) {

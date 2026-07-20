@@ -7,6 +7,7 @@ const Store = require('electron-store');
 const { io } = require('socket.io-client');
 
 const store = new Store({
+  deserialize: (value) => JSON.parse(String(value).replace(/^\uFEFF/, '')),
   defaults: {
     serverUrl: 'https://memelord-production-3bbf.up.railway.app',
     discordUsername: '',
@@ -25,10 +26,13 @@ const store = new Store({
     library: [],
     ttsVoice: '',
     snipHotkey: 'CommandOrControl+Shift+S',
+    chaseEnabled: false,
     chaseHotkey: '6',
     chaseDuration: 60,
     chaseMusicUrl: 'https://youtu.be/N_og7Lok8j8',
     chaseMusicStart: 10,
+    chaseSfxDir: '',
+    chaseCheckpointSeconds: 30,
   },
 });
 
@@ -39,6 +43,7 @@ store.delete('giphyApiKey');
 // Local clip library — durable reaction clips saved to disk
 const clipsDir = path.join(app.getPath('userData'), 'clips');
 try { fs.mkdirSync(clipsDir, { recursive: true }); } catch {}
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.webm']);
 
 // The server deletes uploaded media after 5 min (see /api/upload-media). Cache each
 // clip's hosted URL and reuse it within that window instead of re-uploading the
@@ -78,6 +83,7 @@ let socketClient     = null;
 let overlayRaiseTimer = null;
 let chaseHotkeyActive = false;
 let chaseHotkeyTimer = null;
+let chaseHotkeyRepeatSeen = false;
 
 // Only allow one production MemeDrop at a time. Development can opt into a
 // separate visual-test instance without closing the user's installed app.
@@ -326,7 +332,7 @@ function registerHotkey() {
     }
   }
 
-  const chaseKey = store.get('chaseHotkey');
+  const chaseKey = store.get('chaseEnabled') ? store.get('chaseHotkey') : '';
   if (chaseKey) {
     try {
       const ok = globalShortcut.register(chaseKey, triggerChaseHotkey);
@@ -342,7 +348,7 @@ function registerHotkey() {
 function chaseAction(command) {
   const musicUrl = store.get('chaseMusicUrl') || '';
   return {
-    action: {
+    action: enrichChaseAction({
       type: 'chase-control',
       command,
       id: 'local-hotkey',
@@ -352,9 +358,39 @@ function chaseAction(command) {
         url: musicUrl,
         startSeconds: Math.min(600, Math.max(0, Number(store.get('chaseMusicStart')) || 0)),
       } : null,
-    },
-    positionX: 50,
-    positionY: 14,
+    }),
+    positionX: 0,
+    positionY: 0,
+  };
+}
+
+function listChaseSfx(dir = store.get('chaseSfxDir')) {
+  if (!dir) return null;
+  try {
+    const files = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isFile() && AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
+      .map(entry => ({
+        name: entry.name,
+        url: pathToFileURL(path.join(dir, entry.name)).toString(),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (!files.length) return null;
+    const start = files.find(file => /\bman\b/i.test(file.name)) || files[0];
+    const end = files.find(file => /beautiful|coming.*end/i.test(file.name)) || null;
+    const checkpoints = files.filter(file => file.url !== start.url && file.url !== end?.url);
+    return { start, end, checkpoints: checkpoints.length ? checkpoints : files.filter(file => file.url !== end?.url) };
+  } catch (e) {
+    console.warn('[chase] sfx folder unavailable:', e.message);
+    return null;
+  }
+}
+
+function enrichChaseAction(action) {
+  if (!action || !['chase-control', 'chase-timer'].includes(action.type)) return action;
+  return {
+    ...action,
+    checkpointSeconds: Math.min(180, Math.max(5, Number(store.get('chaseCheckpointSeconds')) || 30)),
+    sfx: action.sfx || listChaseSfx(),
   };
 }
 
@@ -366,14 +402,19 @@ function sendChaseToOverlay(command) {
 function triggerChaseHotkey() {
   if (!chaseHotkeyActive) {
     chaseHotkeyActive = true;
+    chaseHotkeyRepeatSeen = false;
     sendChaseToOverlay('start');
+  } else {
+    chaseHotkeyRepeatSeen = true;
   }
   if (chaseHotkeyTimer) clearTimeout(chaseHotkeyTimer);
+  const releaseGraceMs = chaseHotkeyRepeatSeen ? 380 : 950;
   chaseHotkeyTimer = setTimeout(() => {
     chaseHotkeyActive = false;
+    chaseHotkeyRepeatSeen = false;
     chaseHotkeyTimer = null;
     sendChaseToOverlay('stop');
-  }, 360);
+  }, releaseGraceMs);
 }
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
@@ -384,6 +425,7 @@ ipcMain.handle('save-settings', (_event, newSettings) => {
   store.set(newSettings);
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('settings-changed', store.store);
+    if (newSettings.chaseEnabled === false) sendChaseToOverlay('stop');
   }
   connectSocket();
   registerHotkey();
@@ -485,7 +527,7 @@ async function postDrop({ url, target, caption, captionTop, captionBottom, capti
     size:         size    || 'm',
     positionX:    positionX ?? null,
     positionY:    positionY ?? null,
-    action:       action || null,
+    action:       enrichChaseAction(action) || null,
   };
 
   const res = await fetch(`${serverUrl}/api/drop`, {
@@ -550,7 +592,8 @@ ipcMain.handle('get-users', async () => {
 
 ipcMain.handle('preview-drop', async (_event, payload) => {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
-    overlayWindow.webContents.send('drop', payload);
+    const event = payload?.action ? { ...payload, action: enrichChaseAction(payload.action) } : payload;
+    overlayWindow.webContents.send('drop', event);
     return { ok: true, local: true };
   }
   return { error: 'overlay unavailable' };
@@ -567,6 +610,16 @@ ipcMain.handle('choose-chase-audio', async () => {
   });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
   return { url: pathToFileURL(result.filePaths[0]).toString(), path: result.filePaths[0] };
+});
+
+ipcMain.handle('choose-chase-sfx-folder', async () => {
+  const result = await dialog.showOpenDialog(senderWindow || undefined, {
+    title: 'Choose chase SFX folder',
+    properties: ['openDirectory'],
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+  const dir = result.filePaths[0];
+  return { dir, sfx: listChaseSfx(dir) };
 });
 
 ipcMain.on('close-sender', () => {

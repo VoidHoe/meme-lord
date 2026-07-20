@@ -21,6 +21,7 @@
           <button class="tab active" data-tab="compose"><span>✎</span>Compose</button>
           <button class="tab" data-tab="library"><span>▣</span>Library</button>
           <button class="tab" data-tab="history"><span>↶</span>History</button>
+          <button class="tab" data-tab="chase"><span>⏱</span>Chase</button>
           <button class="tab settings-tab" data-tab="settings"><span>⚙</span>Settings</button>
         </nav>
         <div class="sidebar-note">Fast jokes.<br>Perfect timing.</div>
@@ -52,22 +53,6 @@
 
             <aside class="inspector">
               <div class="inspector-scroll">
-                <section class="control-section">
-                  <div class="control-title"><span>Chase timer</span><small>Instant overlay</small></div>
-                  <div class="chase-row">
-                    <label class="field-label" for="chase-duration">Seconds</label>
-                    <input id="chase-duration" class="field" type="number" min="5" max="180" step="5" value="60" />
-                    <label class="field-label" for="chase-hotkey">Hotkey</label>
-                    <input id="chase-hotkey" class="field" type="text" value="6" />
-                    <label class="field-label" for="chase-music">Music URL</label>
-                    <input id="chase-music" class="field" type="url" value="https://youtu.be/N_og7Lok8j8" />
-                    <button id="chase-import" class="ghost-btn" type="button">Import audio</button>
-                    <label class="field-label" for="chase-music-start">Start at</label>
-                    <input id="chase-music-start" class="field" type="number" min="0" max="600" step="1" value="10" />
-                    <button id="chase-btn" class="ghost-btn" type="button">Hold chase</button>
-                  </div>
-                </section>
-
                 <section class="control-section">
                   <div class="control-title"><span>Send to</span><button id="refresh-btn" title="Refresh friends">↻</button></div>
                   <select id="target" class="field"><option value="">Everyone online</option></select>
@@ -131,6 +116,32 @@
         <section class="panel page-panel" id="history-panel">
           <div class="page-head"><div><h1>History</h1><p>Your latest drops, ready to revisit or resend.</p></div><button id="history-clear-btn" class="ghost-btn danger">Clear history</button></div>
           <div id="history-list"></div><div id="history-empty">No drops sent yet</div>
+        </section>
+
+        <section class="panel page-panel chase-page" id="chase-panel">
+          <div class="page-head"><div><h1>Chase</h1><p>Local DBD chase timer, hotkey, music and Kobe cues.</p></div></div>
+          <div class="chase-settings">
+            <section class="settings-card">
+              <h2>Activation</h2>
+              <label class="toggle"><input type="checkbox" id="chase-enabled"> Enable chase mode <small>Registers the global hotkey while MemeDrop is running</small></label>
+              <label>Hotkey<input id="chase-hotkey" class="field" type="text" value="6" /></label>
+              <button id="chase-btn" class="primary-btn" type="button">Hold chase</button>
+              <div id="chase-status"></div>
+            </section>
+            <section class="settings-card">
+              <h2>Timer & music</h2>
+              <label>Max seconds<input id="chase-duration" class="field" type="number" min="5" max="180" step="5" value="60" /></label>
+              <label>Music URL or file<input id="chase-music" class="field" type="url" value="https://youtu.be/N_og7Lok8j8" /></label>
+              <label>Start at<input id="chase-music-start" class="field" type="number" min="0" max="600" step="1" value="10" /></label>
+              <button id="chase-import" class="ghost-btn" type="button">Import audio</button>
+            </section>
+            <section class="settings-card">
+              <h2>Kobe SFX</h2>
+              <label>SFX every<input id="chase-checkpoint" class="field" type="number" min="5" max="180" step="5" value="30" /></label>
+              <button id="chase-sfx-import" class="ghost-btn" type="button">Import SFX folder</button>
+              <div id="chase-sfx-status">No SFX folder</div>
+            </section>
+          </div>
         </section>
 
         <section class="panel page-panel settings-page" id="settings-panel">
