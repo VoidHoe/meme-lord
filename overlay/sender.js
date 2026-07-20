@@ -303,8 +303,8 @@ function chasePayload(command, id) {
 }
 
 async function sendChaseAction(payload) {
-  const result = await window.sender.previewDrop(payload);
-  if (!result.ok) throw new Error(result.error || 'overlay unavailable');
+  const result = await window.sender.sendDrop(payload);
+  if (!result.ok) throw new Error(result.error || 'Server error');
   return result;
 }
 
@@ -320,7 +320,7 @@ async function startChaseHold(event) {
   saveChaseSettings();
   try {
     const result = await sendChaseAction(payload);
-    setChaseStatus(result.local ? 'Local chase preview' : 'Chase timer live!', 'ok');
+    setChaseStatus('Chase timer live for everyone!', 'ok');
     window.sender.saveHistory({
       ...payload,
       id: Date.now(),
@@ -382,7 +382,7 @@ async function toggleChase(event) {
   saveChaseSettings();
   try {
     const result = await sendChaseAction(payload);
-    setChaseStatus(result.local ? 'Local chase preview' : 'Chase timer live!', 'ok');
+    setChaseStatus('Chase timer live for everyone!', 'ok');
     if (chaseToggleAutoTimer) clearTimeout(chaseToggleAutoTimer);
     chaseToggleAutoTimer = setTimeout(() => {
       if (chaseToggleId === payload.action.id) {

@@ -451,9 +451,17 @@ function enrichChaseAction(action) {
   };
 }
 
-function sendChaseToOverlay(command) {
-  if (!overlayWindow || overlayWindow.isDestroyed()) return;
-  overlayWindow.webContents.send('drop', chaseAction(command));
+async function sendChase(command) {
+  try {
+    return await postDrop(chaseAction(command));
+  } catch (err) {
+    console.error('[chase] broadcast failed:', err.message);
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      overlayWindow.webContents.send('drop', chaseAction(command));
+      return { ok: true, local: true };
+    }
+    return { error: err.message };
+  }
 }
 
 function triggerChaseHotkey() {
@@ -464,7 +472,7 @@ function triggerChaseHotkey() {
   if (!chaseHotkeyActive) {
     chaseHotkeyActive = true;
     chaseHotkeyRepeatSeen = false;
-    sendChaseToOverlay('start');
+    sendChase('start');
   } else {
     chaseHotkeyRepeatSeen = true;
   }
@@ -474,7 +482,7 @@ function triggerChaseHotkey() {
     chaseHotkeyActive = false;
     chaseHotkeyRepeatSeen = false;
     chaseHotkeyTimer = null;
-    sendChaseToOverlay('stop');
+    sendChase('stop');
   }, releaseGraceMs);
 }
 
@@ -489,7 +497,7 @@ function triggerChaseToggleHotkey() {
   }
   chaseToggleHotkeyLocked = true;
   chaseToggleActive = !chaseToggleActive;
-  sendChaseToOverlay(chaseToggleActive ? 'start' : 'stop');
+  sendChase(chaseToggleActive ? 'start' : 'stop');
   if (chaseToggleAutoTimer) {
     clearTimeout(chaseToggleAutoTimer);
     chaseToggleAutoTimer = null;
@@ -590,7 +598,7 @@ ipcMain.handle('save-settings', (_event, newSettings) => {
       chaseHotkeyTimer = null;
       chaseToggleHotkeyTimer = null;
       chaseToggleAutoTimer = null;
-      sendChaseToOverlay('stop');
+      sendChase('stop');
     }
     if (newSettings.facecamEnabled === false) stopFacecam();
   }
