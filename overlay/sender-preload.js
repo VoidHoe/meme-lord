@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('sender', {
   chooseChaseAudio: ()               => ipcRenderer.invoke('choose-chase-audio'),
   chooseChaseSfxFolder: ()           => ipcRenderer.invoke('choose-chase-sfx-folder'),
   getChaseAudioLibrary: ()           => ipcRenderer.invoke('get-chase-audio-library'),
+  deleteChaseMusic: (id)             => ipcRenderer.invoke('delete-chase-music', id),
   resolveLink:    (url)              => ipcRenderer.invoke('resolve-link', url),
   uploadAudio:    (buf)              => ipcRenderer.invoke('upload-audio', buf),
   uploadMedia:    (buf, mime)        => ipcRenderer.invoke('upload-media', { buffer: buf, mimeType: mime }),

@@ -72,6 +72,7 @@ const chaseDuration = $('chase-duration');
 const chaseHotkey = $('chase-hotkey');
 const chaseMusicMode = $('chase-music-mode');
 const chaseMusicSelect = $('chase-music-select');
+const chaseMusicPicker = $('chase-music-picker');
 const chaseMusic = $('chase-music');
 const chaseMusicStart = $('chase-music-start');
 const chaseImport = $('chase-import');
@@ -243,12 +244,17 @@ function saveChaseSettings() {
 
 function renderChaseMusicLibrary(selectedId = chaseMusicSelect.value) {
   while (chaseMusicSelect.options.length) chaseMusicSelect.remove(0);
+  chaseMusicPicker.innerHTML = '';
   if (!chaseMusicLibrary.length) {
     const option = document.createElement('option');
     option.value = '';
     option.textContent = 'No server songs';
     chaseMusicSelect.appendChild(option);
     chaseMusicSelect.value = '';
+    const empty = document.createElement('div');
+    empty.className = 'music-picker-empty';
+    empty.textContent = 'No songs yet';
+    chaseMusicPicker.appendChild(empty);
     return;
   }
   const randomOption = document.createElement('option');
@@ -266,6 +272,75 @@ function renderChaseMusicLibrary(selectedId = chaseMusicSelect.value) {
     : chaseMusicLibrary.some(track => track.id === selectedId)
     ? selectedId
     : chaseMusicLibrary[0].id;
+  renderChaseMusicPicker();
+}
+
+function renderChaseMusicPicker() {
+  chaseMusicPicker.innerHTML = '';
+  const rows = [
+    { id: '__random', name: 'Random song', meta: `${chaseMusicLibrary.length} song${chaseMusicLibrary.length === 1 ? '' : 's'}`, removable: false },
+    ...chaseMusicLibrary.map(track => ({
+      id: track.id,
+      name: track.name || 'Imported track',
+      meta: track.uploadedAt ? new Date(track.uploadedAt).toLocaleDateString() : 'Server song',
+      removable: true,
+      track,
+    })),
+  ];
+  rows.forEach((row) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'music-picker-row';
+    item.classList.toggle('active', chaseMusicSelect.value === row.id);
+    const dot = document.createElement('span');
+    dot.className = 'music-picker-dot';
+    const copy = document.createElement('span');
+    copy.className = 'music-picker-copy';
+    const title = document.createElement('strong');
+    title.textContent = row.name;
+    const meta = document.createElement('small');
+    meta.textContent = row.meta;
+    copy.append(title, meta);
+    item.append(dot, copy);
+    item.addEventListener('click', () => {
+      chaseMusicSelect.value = row.id;
+      renderChaseMusicPicker();
+      saveChaseSettings();
+    });
+    if (row.removable) {
+      const remove = document.createElement('span');
+      remove.className = 'music-picker-remove';
+      remove.textContent = 'Remove';
+      remove.title = `Remove ${row.name}`;
+      remove.addEventListener('click', (event) => {
+        event.stopPropagation();
+        deleteChaseMusic(row.track);
+      });
+      item.appendChild(remove);
+    }
+    chaseMusicPicker.appendChild(item);
+  });
+}
+
+async function deleteChaseMusic(track) {
+  if (!track?.id) return;
+  const name = track.name || 'this song';
+  if (!confirm(`Remove "${name}" from the shared Chase music library?`)) return;
+  setChaseStatus(`Removing ${name}...`);
+  try {
+    const result = await window.sender.deleteChaseMusic(track.id);
+    if (!result.ok) throw new Error(result.error || 'Server error');
+    const nextLibrary = Array.isArray(result.library?.music) ? result.library.music : [];
+    chaseMusicLibrary = nextLibrary;
+    const nextSelected = chaseMusicSelect.value === track.id
+      ? nextLibrary[0]?.id || ''
+      : chaseMusicSelect.value;
+    renderChaseMusicLibrary(nextSelected);
+    saveChaseSettings();
+    setChaseStatus(`Removed ${name}`, 'ok');
+  } catch (error) {
+    setChaseStatus(`Could not remove song: ${error.message}`, 'err');
+  }
 }
 
 async function refreshChaseAudioLibrary(selectedId = chaseMusicSelect.value) {

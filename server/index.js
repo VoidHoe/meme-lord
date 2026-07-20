@@ -98,6 +98,20 @@ function savePersistentAudio(req, prefix) {
   };
 }
 
+function removePersistentAudioFile(entry) {
+  const filename = path.basename(entry?.filename || '');
+  if (!filename) return;
+  const filepath = path.join(persistentAudioDir, filename);
+  const resolved = path.resolve(filepath);
+  const root = path.resolve(persistentAudioDir);
+  if (!resolved.startsWith(`${root}${path.sep}`)) return;
+  try {
+    if (fs.existsSync(resolved)) fs.unlinkSync(resolved);
+  } catch (err) {
+    console.warn('[api] could not delete chase audio file:', err.message);
+  }
+}
+
 io.on('connection', (socket) => {
   console.log(`[socket] client connecté: ${socket.id}`);
 
@@ -157,6 +171,16 @@ app.post('/api/chase-audio/music', express.raw({ type: 'audio/*', limit: '50mb' 
     console.error('[api] erreur chase music:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+app.delete('/api/chase-audio/music/:id', (req, res) => {
+  const library = loadChaseLibrary();
+  const index = library.music.findIndex(entry => entry.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'music not found' });
+  const [removed] = library.music.splice(index, 1);
+  removePersistentAudioFile(removed);
+  saveChaseLibrary(library);
+  res.json({ ok: true, removed, library });
 });
 
 app.post('/api/chase-audio/sfx-reset', (_req, res) => {

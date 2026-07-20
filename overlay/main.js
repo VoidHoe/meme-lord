@@ -6,6 +6,13 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const Store = require('electron-store');
 const { io } = require('socket.io-client');
 
+const allowDevInstance = !app.isPackaged && process.argv.includes('--dev-multiple');
+if (allowDevInstance) {
+  const devUserData = path.join(app.getPath('appData'), 'memedrop-overlay-dev');
+  app.setPath('userData', devUserData);
+  app.commandLine.appendSwitch('disk-cache-dir', path.join(devUserData, 'Cache'));
+}
+
 const store = new Store({
   deserialize: (value) => JSON.parse(String(value).replace(/^\uFEFF/, '')),
   defaults: {
@@ -122,7 +129,6 @@ let lastFacecamFrameAt = 0;
 
 // Only allow one production MemeDrop at a time. Development can opt into a
 // separate visual-test instance without closing the user's installed app.
-const allowDevInstance = !app.isPackaged && process.argv.includes('--dev-multiple');
 if (!allowDevInstance && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -1145,6 +1151,18 @@ ipcMain.handle('get-chase-audio-library', async () => {
   } catch (err) {
     return { music: [], sfx: { start: null, end: null, checkpoints: [] }, error: err.message };
   }
+});
+
+ipcMain.handle('delete-chase-music', async (_event, id) => {
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  const res = await fetch(`${serverUrl}/api/chase-audio/music/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: body.error || `HTTP ${res.status}` };
+  store.set('chaseMusicLibrary', body.library?.music || []);
+  if (store.get('chaseSelectedMusicId') === id) {
+    store.set('chaseSelectedMusicId', body.library?.music?.[0]?.id || '');
+  }
+  return { ok: true, library: body.library || { music: [] } };
 });
 
 ipcMain.on('close-sender', () => {

@@ -615,9 +615,10 @@ function startChaseSfx(action) {
     playChaseSfx(action.sfx.start.url, playing);
   }
 
-  if (action.checkpointSfxEnabled !== false && checkpoints.length) {
+  if (action.checkpointSfxEnabled !== false && settings.chaseCheckpointSfxEnabled !== false && checkpoints.length) {
     let index = 0;
     const playCheckpoint = () => {
+      if (settings.chaseCheckpointSfxEnabled === false) return;
       playChaseSfx(checkpoints[index % checkpoints.length].url, playing);
       index++;
     };
