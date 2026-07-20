@@ -31,11 +31,16 @@ const store = new Store({
     chaseTriggerMode: 'hold',
     chaseDuration: 60,
     chaseMusicUrl: 'https://youtu.be/N_og7Lok8j8',
+    chaseMusicLibrary: [],
+    chaseMusicMode: 'manual',
+    chaseSelectedMusicId: '',
     chaseMusicStart: 10,
     chaseSfxDir: '',
+    chaseSfxPrepared: null,
     chaseCheckpointSeconds: 30,
     facecamEnabled: false,
     facecamHotkey: '5',
+    facecamTriggerMode: 'hold',
     facecamFps: 8,
     facecamDeviceId: '',
     facecamPositionX: 78,
@@ -110,6 +115,8 @@ let facecamHotkeyActive = false;
 let facecamHotkeyTimer = null;
 let facecamHotkeyRepeatSeen = false;
 let facecamSessionId = null;
+let facecamToggleHotkeyLocked = false;
+let facecamToggleHotkeyTimer = null;
 
 // Only allow one production MemeDrop at a time. Development can opt into a
 // separate visual-test instance without closing the user's installed app.
@@ -232,6 +239,40 @@ function createFacecamWindow() {
   facecamWindow.loadFile(path.join(__dirname, 'facecam.html'));
   facecamWindow.on('closed', () => { facecamWindow = null; });
   return facecamWindow;
+}
+
+function whenFacecamReady() {
+  const win = createFacecamWindow();
+  if (!win.webContents.isLoading()) return Promise.resolve(win);
+  return new Promise((resolve) => {
+    win.webContents.once('did-finish-load', () => resolve(win));
+  });
+}
+
+async function listFacecamDevices() {
+  const win = await whenFacecamReady();
+  return win.webContents.executeJavaScript(`
+    (async () => {
+      async function devices() {
+        const list = await navigator.mediaDevices.enumerateDevices();
+        return list
+          .filter(device => device.kind === 'videoinput')
+          .map((device, index) => ({
+            deviceId: device.deviceId,
+            label: device.label || 'Camera ' + (index + 1),
+          }));
+      }
+      let list = await devices();
+      if (!list.some(device => device.label && !/^Camera \\d+$/.test(device.label))) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          stream.getTracks().forEach(track => track.stop());
+          list = await devices();
+        } catch {}
+      }
+      return list;
+    })()
+  `);
 }
 
 // Send a message to the sender once it has finished loading (creating it if needed).
@@ -389,30 +430,60 @@ function registerHotkey() {
 
   const chaseKey = store.get('chaseEnabled') ? store.get('chaseHotkey') : '';
   if (chaseKey) {
-    try {
-      const ok = globalShortcut.register(chaseKey, triggerChaseHotkey);
-      if (ok) console.log('[hotkey] chase enregistré:', chaseKey);
-      else console.error('[hotkey] chase indisponible:', chaseKey);
-    } catch (e) {
-      console.error('[hotkey] chase erreur:', e.message);
-    }
+    registerHotkeyVariants('chase', chaseKey, triggerChaseHotkey);
   }
 
   const facecamKey = store.get('facecamEnabled') ? store.get('facecamHotkey') : '';
   if (facecamKey) {
-    try {
-      const ok = globalShortcut.register(facecamKey, triggerFacecamHotkey);
-      if (ok) console.log('[hotkey] facecam enregistrÃ©:', facecamKey);
-      else console.error('[hotkey] facecam indisponible:', facecamKey);
-    } catch (e) {
-      console.error('[hotkey] facecam erreur:', e.message);
-    }
+    registerHotkeyVariants('facecam', facecamKey, triggerFacecamHotkey);
   }
 
 }
 
+function hotkeyVariants(accelerator) {
+  const key = String(accelerator || '').trim();
+  if (!key) return [];
+  const variants = new Set([key]);
+  const hasModifier = /(^|\+)(CommandOrControl|CmdOrCtrl|Control|Ctrl|Command|Cmd|Alt|Option|AltGr|Shift|Super|Meta)(\+|$)/i.test(key);
+  if (!hasModifier) variants.add(`Shift+${key}`);
+  const symbolFallbacks = {
+    '&': '1',
+    'é': '2',
+    '"': '3',
+    "'": '4',
+    '(': '5',
+    '-': '6',
+    '§': '6',
+    '^': '6',
+    'è': '7',
+    '_': '8',
+    'ç': '9',
+    'à': '0',
+  };
+  const fallback = symbolFallbacks[key];
+  if (!hasModifier && fallback) {
+    variants.add(fallback);
+    variants.add(`Shift+${fallback}`);
+  }
+  return [...variants];
+}
+
+function registerHotkeyVariants(label, accelerator, callback) {
+  const variants = hotkeyVariants(accelerator);
+  const registered = [];
+  variants.forEach((variant) => {
+    try {
+      if (globalShortcut.register(variant, callback)) registered.push(variant);
+    } catch (e) {
+      console.error(`[hotkey] ${label} erreur ${variant}:`, e.message);
+    }
+  });
+  if (registered.length) console.log(`[hotkey] ${label} enregistré:`, registered.join(', '));
+  else console.error(`[hotkey] ${label} indisponible:`, accelerator);
+}
+
 function chaseAction(command) {
-  const musicUrl = store.get('chaseMusicUrl') || '';
+  const music = selectedChaseMusic();
   return {
     action: enrichChaseAction({
       type: 'chase-control',
@@ -420,8 +491,10 @@ function chaseAction(command) {
       id: 'local-hotkey',
       durationSeconds: Math.min(180, Math.max(5, Number(store.get('chaseDuration')) || 60)),
       label: 'CHASE',
-      music: musicUrl ? {
-        url: musicUrl,
+      music: music?.url ? {
+        url: music.url,
+        trackId: music.id !== 'manual' ? music.id : null,
+        name: music.name || null,
         startSeconds: Math.min(600, Math.max(0, Number(store.get('chaseMusicStart')) || 0)),
       } : null,
     }),
@@ -437,6 +510,7 @@ function listChaseSfx(dir = store.get('chaseSfxDir')) {
       .filter(entry => entry.isFile() && AUDIO_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
       .map(entry => ({
         name: entry.name,
+        sourcePath: path.join(dir, entry.name),
         url: pathToFileURL(path.join(dir, entry.name)).toString(),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -451,12 +525,32 @@ function listChaseSfx(dir = store.get('chaseSfxDir')) {
   }
 }
 
+function selectedChaseMusic() {
+  const mode = store.get('chaseMusicMode') || 'manual';
+  const library = Array.isArray(store.get('chaseMusicLibrary')) ? store.get('chaseMusicLibrary') : [];
+  if (mode === 'random' && library.length) {
+    return library[Math.floor(Math.random() * library.length)];
+  }
+  if (mode === 'library') {
+    const selected = library.find(track => track.id === store.get('chaseSelectedMusicId'));
+    if (selected) return selected;
+  }
+  const manualUrl = store.get('chaseMusicUrl') || '';
+  return manualUrl ? {
+    id: 'manual',
+    name: 'Manual URL',
+    url: manualUrl,
+    sourcePath: localAudioPath(manualUrl),
+  } : null;
+}
+
 function enrichChaseAction(action) {
   if (!action || !['chase-control', 'chase-timer'].includes(action.type)) return action;
+  const preparedSfx = store.get('chaseSfxPrepared');
   return {
     ...action,
     checkpointSeconds: Math.min(180, Math.max(5, Number(store.get('chaseCheckpointSeconds')) || 30)),
-    sfx: action.sfx || listChaseSfx(),
+    sfx: action.sfx || preparedSfx || listChaseSfx(),
   };
 }
 
@@ -495,6 +589,52 @@ async function uploadChaseAudioUrl(url) {
   return data.url;
 }
 
+async function uploadChaseAudioPath(filePath) {
+  return uploadChaseAudioUrl(pathToFileURL(filePath).toString());
+}
+
+async function refreshPreparedTrack(track) {
+  if (!track?.sourcePath || !fs.existsSync(track.sourcePath)) return track;
+  const stat = fs.statSync(track.sourcePath);
+  const uploadedAt = Number(track.uploadedAt) || 0;
+  if (track.url && track.size === stat.size && track.mtimeMs === stat.mtimeMs && Date.now() - uploadedAt < 5 * 60 * 60 * 1000) {
+    return track;
+  }
+  const url = await uploadChaseAudioPath(track.sourcePath);
+  return {
+    ...track,
+    url,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    uploadedAt: Date.now(),
+  };
+}
+
+async function prepareSfxLibrary(sfx) {
+  if (!sfx) return null;
+  const clone = {
+    start: sfx.start ? { ...sfx.start } : sfx.start,
+    end: sfx.end ? { ...sfx.end } : sfx.end,
+    checkpoints: Array.isArray(sfx.checkpoints) ? sfx.checkpoints.map(item => ({ ...item })) : [],
+  };
+  const items = [clone.start, clone.end, ...clone.checkpoints].filter(Boolean);
+  for (const item of items) {
+    if (item.sourcePath && fs.existsSync(item.sourcePath)) {
+      const stat = fs.statSync(item.sourcePath);
+      const uploadedAt = Number(item.uploadedAt) || 0;
+      if (!item.url || item.size !== stat.size || item.mtimeMs !== stat.mtimeMs || Date.now() - uploadedAt >= 5 * 60 * 60 * 1000) {
+        item.url = await uploadChaseAudioPath(item.sourcePath);
+        item.size = stat.size;
+        item.mtimeMs = stat.mtimeMs;
+        item.uploadedAt = Date.now();
+      }
+    } else if (item.url) {
+      item.url = await uploadChaseAudioUrl(item.url);
+    }
+  }
+  return clone;
+}
+
 async function prepareChaseActionForBroadcast(action) {
   const prepared = enrichChaseAction(action);
   if (!prepared || prepared.command === 'stop') return prepared;
@@ -509,6 +649,21 @@ async function prepareChaseActionForBroadcast(action) {
         : prepared.sfx.checkpoints,
     } : prepared.sfx,
   };
+  if (clone.music?.trackId) {
+    const library = Array.isArray(store.get('chaseMusicLibrary')) ? store.get('chaseMusicLibrary') : [];
+    const track = library.find(item => item.id === clone.music.trackId);
+    if (track) {
+      const preparedTrack = await refreshPreparedTrack(track);
+      clone.music.url = preparedTrack.url;
+      clone.music.name = preparedTrack.name;
+      const index = library.findIndex(item => item.id === preparedTrack.id);
+      if (index !== -1) {
+        const nextLibrary = [...library];
+        nextLibrary[index] = preparedTrack;
+        store.set('chaseMusicLibrary', nextLibrary);
+      }
+    }
+  }
   if (clone.music?.url) clone.music.url = await uploadChaseAudioUrl(clone.music.url);
   const sfxItems = [
     clone.sfx?.start,
@@ -517,6 +672,10 @@ async function prepareChaseActionForBroadcast(action) {
   ].filter(Boolean);
   for (const sfx of sfxItems) {
     if (sfx.url) sfx.url = await uploadChaseAudioUrl(sfx.url);
+  }
+  if (clone.sfx) {
+    clone.sfx = await prepareSfxLibrary(clone.sfx);
+    if (!action.sfx && clone.sfx) store.set('chaseSfxPrepared', clone.sfx);
   }
   return clone;
 }
@@ -634,6 +793,10 @@ function stopFacecam() {
 }
 
 function triggerFacecamHotkey() {
+  if (store.get('facecamTriggerMode') === 'toggle') {
+    triggerFacecamToggleHotkey();
+    return;
+  }
   if (!facecamHotkeyActive) {
     facecamHotkeyActive = true;
     facecamHotkeyRepeatSeen = false;
@@ -649,6 +812,25 @@ function triggerFacecamHotkey() {
     facecamHotkeyTimer = null;
     stopFacecam();
   }, releaseGraceMs);
+}
+
+function triggerFacecamToggleHotkey() {
+  if (facecamToggleHotkeyLocked) {
+    if (facecamToggleHotkeyTimer) clearTimeout(facecamToggleHotkeyTimer);
+    facecamToggleHotkeyTimer = setTimeout(() => {
+      facecamToggleHotkeyLocked = false;
+      facecamToggleHotkeyTimer = null;
+    }, 450);
+    return;
+  }
+  facecamToggleHotkeyLocked = true;
+  if (facecamSessionId) stopFacecam();
+  else startFacecam();
+  if (facecamToggleHotkeyTimer) clearTimeout(facecamToggleHotkeyTimer);
+  facecamToggleHotkeyTimer = setTimeout(() => {
+    facecamToggleHotkeyLocked = false;
+    facecamToggleHotkeyTimer = null;
+  }, 450);
 }
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
@@ -670,7 +852,15 @@ ipcMain.handle('save-settings', (_event, newSettings) => {
       chaseToggleAutoTimer = null;
       sendChase('stop');
     }
-    if (newSettings.facecamEnabled === false) stopFacecam();
+    if (newSettings.facecamEnabled === false) {
+      facecamHotkeyActive = false;
+      if (facecamHotkeyTimer) clearTimeout(facecamHotkeyTimer);
+      if (facecamToggleHotkeyTimer) clearTimeout(facecamToggleHotkeyTimer);
+      facecamHotkeyTimer = null;
+      facecamToggleHotkeyTimer = null;
+      facecamToggleHotkeyLocked = false;
+      stopFacecam();
+    }
   }
   connectSocket();
   registerHotkey();
@@ -696,6 +886,15 @@ ipcMain.handle('preview-facecam-start', () => {
 ipcMain.handle('preview-facecam-stop', () => {
   stopFacecam();
   return { ok: true };
+});
+
+ipcMain.handle('get-facecam-devices', async () => {
+  try {
+    return { devices: await listFacecamDevices() };
+  } catch (err) {
+    console.error('[facecam] device list failed:', err.message);
+    return { devices: [], error: err.message };
+  }
 });
 
 // Settings lives in the sender now (as a tab) — route old callers there.
@@ -868,14 +1067,37 @@ ipcMain.handle('preview-drop', async (_event, payload) => {
 ipcMain.handle('choose-chase-audio', async () => {
   const result = await dialog.showOpenDialog(senderWindow || undefined, {
     title: 'Choose chase music',
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
     filters: [
       { name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'webm'] },
       { name: 'All files', extensions: ['*'] },
     ],
   });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
-  return { url: pathToFileURL(result.filePaths[0]).toString(), path: result.filePaths[0] };
+  const existing = Array.isArray(store.get('chaseMusicLibrary')) ? store.get('chaseMusicLibrary') : [];
+  const next = [...existing];
+  const tracks = [];
+  for (const filePath of result.filePaths) {
+    const stat = fs.statSync(filePath);
+    const existingTrack = next.find(track => track.sourcePath === filePath);
+    const track = {
+      id: existingTrack?.id || `music-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: path.basename(filePath, path.extname(filePath)),
+      sourcePath: filePath,
+      url: await uploadChaseAudioPath(filePath),
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      uploadedAt: Date.now(),
+    };
+    const index = next.findIndex(item => item.id === track.id);
+    if (index === -1) next.push(track);
+    else next[index] = track;
+    tracks.push(track);
+  }
+  store.set('chaseMusicLibrary', next);
+  if (!store.get('chaseSelectedMusicId') && tracks[0]) store.set('chaseSelectedMusicId', tracks[0].id);
+  if (tracks[0]) store.set('chaseMusicMode', 'library');
+  return { tracks, library: next };
 });
 
 ipcMain.handle('choose-chase-sfx-folder', async () => {
@@ -885,7 +1107,9 @@ ipcMain.handle('choose-chase-sfx-folder', async () => {
   });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
   const dir = result.filePaths[0];
-  return { dir, sfx: listChaseSfx(dir) };
+  const sfx = await prepareSfxLibrary(listChaseSfx(dir));
+  store.set({ chaseSfxDir: dir, chaseSfxPrepared: sfx });
+  return { dir, sfx };
 });
 
 ipcMain.on('close-sender', () => {

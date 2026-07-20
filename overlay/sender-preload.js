@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('sender', {
   previewDrop:    (payload)          => ipcRenderer.invoke('preview-drop', payload),
   previewFacecamStart: ()            => ipcRenderer.invoke('preview-facecam-start'),
   previewFacecamStop: ()             => ipcRenderer.invoke('preview-facecam-stop'),
+  getFacecamDevices: ()              => ipcRenderer.invoke('get-facecam-devices'),
   chooseChaseAudio: ()               => ipcRenderer.invoke('choose-chase-audio'),
   chooseChaseSfxFolder: ()           => ipcRenderer.invoke('choose-chase-sfx-folder'),
   resolveLink:    (url)              => ipcRenderer.invoke('resolve-link', url),

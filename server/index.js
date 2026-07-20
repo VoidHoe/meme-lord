@@ -173,7 +173,7 @@ app.post('/api/upload-audio', express.raw({ type: 'audio/*', limit: '50mb' }), (
     fs.mkdirSync(audioDir, { recursive: true });
     const filepath = path.join(audioDir, filename);
     fs.writeFileSync(filepath, req.body);
-    setTimeout(() => { try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch {} }, 5 * 60 * 1000);
+    setTimeout(() => { try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch {} }, 6 * 60 * 60 * 1000);
     const publicUrl = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`;
     console.log(`[api] audio uploadé: ${filename}`);
     res.json({ url: `${publicUrl}/audio/${filename}` });
