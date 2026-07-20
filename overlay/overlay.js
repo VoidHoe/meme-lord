@@ -615,7 +615,7 @@ function startChaseSfx(action) {
     playChaseSfx(action.sfx.start.url, playing);
   }
 
-  if (checkpoints.length) {
+  if (action.checkpointSfxEnabled !== false && checkpoints.length) {
     let index = 0;
     const playCheckpoint = () => {
       playChaseSfx(checkpoints[index % checkpoints.length].url, playing);
@@ -816,7 +816,7 @@ function startFacecamOverlay(event) {
   tile.append(img, label);
   positionFacecamTile(tile, event);
   facecamContainer.appendChild(tile);
-  facecams.set(id, { tile, img });
+  facecams.set(id, { tile, img, lastFrameAt: 0 });
 }
 
 function updateFacecamOverlay(event) {
@@ -825,7 +825,11 @@ function updateFacecamOverlay(event) {
   const item = facecams.get(id);
   if (item) {
     positionFacecamTile(item.tile, event);
-    if (event.image) item.img.src = event.image;
+    const now = performance.now();
+    if (event.image && now - item.lastFrameAt >= 100) {
+      item.lastFrameAt = now;
+      item.img.src = event.image;
+    }
   }
 }
 
@@ -843,7 +847,7 @@ function stopFacecamOverlay(event = {}) {
 }
 
 function positionFacecamTile(tile, event) {
-  const width = Math.min(520, Math.max(120, Number(event.width) || 260));
+  const width = Math.min(360, Math.max(120, Number(event.width) || 220));
   const height = Math.min(390, Math.max(90, Number(event.height) || Math.round(width * 0.75)));
   const xPct = Math.min(100, Math.max(0, Number(event.positionX) || 0));
   const yPct = Math.min(100, Math.max(0, Number(event.positionY) || 0));

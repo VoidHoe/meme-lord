@@ -123,7 +123,7 @@ io.on('connection', (socket) => {
 
   socket.on('facecam-start', payload => relayFacecam('facecam-start', payload));
   socket.on('facecam-frame', payload => {
-    if (!payload?.image || String(payload.image).length > 450000) return;
+    if (!payload?.image || String(payload.image).length > 260000) return;
     relayFacecam('facecam-frame', payload);
   });
   socket.on('facecam-stop', payload => relayFacecam('facecam-stop', payload));

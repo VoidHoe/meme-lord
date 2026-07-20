@@ -1,9 +1,13 @@
 {
   "name": "memedrop",
-  "version": "2.0.11",
+  "version": "2.0.12",
   "private": true,
-  "engines": { "node": ">=20.0.0" },
-  "workspaces": ["server"],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "server"
+  ],
   "scripts": {
     "start": "node server/index.js",
     "server": "node server/index.js",

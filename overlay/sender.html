@@ -144,6 +144,7 @@
             </section>
             <section class="settings-card">
               <h2>Kobe SFX</h2>
+              <label class="toggle"><input type="checkbox" id="chase-checkpoint-enabled" checked> Enable checkpoint SFX <small>Plays the repeating cue during the chase</small></label>
               <label>SFX every<input id="chase-checkpoint" class="field" type="number" min="5" max="180" step="5" value="30" /></label>
               <button id="chase-sfx-import" class="ghost-btn" type="button">Import SFX to server</button>
               <div id="chase-sfx-status">No SFX folder</div>
@@ -168,8 +169,8 @@
             <section class="settings-card">
               <h2>Stream</h2>
               <label>Camera<select id="facecam-device" class="field"><option value="">Default camera</option></select></label>
-              <label>Frames per second<input id="facecam-fps" class="field" type="number" min="2" max="15" step="1" value="8" /></label>
-              <label>Width<input id="facecam-width" class="field" type="number" min="120" max="520" step="10" value="260" /></label>
+              <label>Frames per second<input id="facecam-fps" class="field" type="number" min="2" max="10" step="1" value="6" /></label>
+              <label>Width<input id="facecam-width" class="field" type="number" min="120" max="360" step="10" value="220" /></label>
               <p class="setting-note">Uses your default webcam at low quality so it stays light on the server.</p>
             </section>
             <section class="settings-card facecam-placement-card">

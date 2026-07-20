@@ -37,15 +37,16 @@ const store = new Store({
     chaseMusicStart: 10,
     chaseSfxDir: '',
     chaseSfxPrepared: null,
+    chaseCheckpointSfxEnabled: true,
     chaseCheckpointSeconds: 30,
     facecamEnabled: false,
     facecamHotkey: '5',
     facecamTriggerMode: 'hold',
-    facecamFps: 8,
+    facecamFps: 6,
     facecamDeviceId: '',
     facecamPositionX: 78,
     facecamPositionY: 8,
-    facecamWidth: 260,
+    facecamWidth: 220,
   },
 });
 
@@ -117,6 +118,7 @@ let facecamHotkeyRepeatSeen = false;
 let facecamSessionId = null;
 let facecamToggleHotkeyLocked = false;
 let facecamToggleHotkeyTimer = null;
+let lastFacecamFrameAt = 0;
 
 // Only allow one production MemeDrop at a time. Development can opt into a
 // separate visual-test instance without closing the user's installed app.
@@ -549,6 +551,7 @@ function enrichChaseAction(action) {
   const preparedSfx = store.get('chaseSfxPrepared');
   return {
     ...action,
+    checkpointSfxEnabled: store.get('chaseCheckpointSfxEnabled') !== false,
     checkpointSeconds: Math.min(180, Math.max(5, Number(store.get('chaseCheckpointSeconds')) || 30)),
     sfx: action.sfx || preparedSfx || listChaseSfx(),
   };
@@ -765,7 +768,7 @@ function triggerChaseToggleHotkey() {
 }
 
 function facecamPayload(extra = {}) {
-  const width = Math.min(520, Math.max(120, Number(store.get('facecamWidth')) || 260));
+  const width = Math.min(360, Math.max(120, Number(store.get('facecamWidth')) || 220));
   return {
     id: facecamSessionId,
     target: null,
@@ -781,6 +784,7 @@ function facecamPayload(extra = {}) {
 function startFacecam() {
   if (facecamSessionId) return;
   facecamSessionId = `facecam-${Date.now()}`;
+  lastFacecamFrameAt = 0;
   const payload = facecamPayload();
   if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.webContents.send('facecam-start', payload);
   if (socketClient) socketClient.emit('facecam-start', payload);
@@ -789,7 +793,7 @@ function startFacecam() {
     if (!facecamWindow || facecamWindow.isDestroyed()) return;
     facecamWindow.webContents.send('facecam-capture-start', {
       deviceId: store.get('facecamDeviceId') || '',
-      fps: Math.min(15, Math.max(2, Number(store.get('facecamFps')) || 8)),
+      fps: Math.min(10, Math.max(2, Number(store.get('facecamFps')) || 6)),
       width: payload.width,
       height: payload.height,
     });
@@ -888,7 +892,13 @@ ipcMain.handle('save-settings', (_event, newSettings) => {
 
 ipcMain.on('facecam-frame', (_event, image) => {
   if (!facecamSessionId || !image) return;
-  const payload = facecamPayload({ image });
+  const frame = String(image);
+  if (frame.length > 260000) return;
+  const now = Date.now();
+  const fps = Math.min(10, Math.max(2, Number(store.get('facecamFps')) || 6));
+  if (now - lastFacecamFrameAt < Math.floor(1000 / fps)) return;
+  lastFacecamFrameAt = now;
+  const payload = facecamPayload({ image: frame });
   if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.webContents.send('facecam-frame', payload);
   if (socketClient) socketClient.emit('facecam-frame', payload);
 });

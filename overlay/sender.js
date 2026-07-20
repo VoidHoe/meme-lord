@@ -75,6 +75,7 @@ const chaseMusicSelect = $('chase-music-select');
 const chaseMusic = $('chase-music');
 const chaseMusicStart = $('chase-music-start');
 const chaseImport = $('chase-import');
+const chaseCheckpointEnabled = $('chase-checkpoint-enabled');
 const chaseCheckpoint = $('chase-checkpoint');
 const chaseSfxImport = $('chase-sfx-import');
 const chaseSfxStatus = $('chase-sfx-status');
@@ -189,7 +190,7 @@ chaseBtn.addEventListener('pointerleave', (event) => {
 });
 chaseImport.addEventListener('click', importChaseAudio);
 chaseSfxImport.addEventListener('click', importChaseSfxFolder);
-[chaseEnabled, chaseDuration, chaseHotkey, chaseMusicMode, chaseMusicSelect, chaseMusic, chaseMusicStart, chaseCheckpoint].forEach((input) => {
+[chaseEnabled, chaseDuration, chaseHotkey, chaseMusicMode, chaseMusicSelect, chaseMusic, chaseMusicStart, chaseCheckpointEnabled, chaseCheckpoint].forEach((input) => {
   input.addEventListener('change', saveChaseSettings);
   input.addEventListener('blur', saveChaseSettings);
 });
@@ -211,6 +212,7 @@ function loadChaseSettings(settings) {
   refreshChaseAudioLibrary(selectedMusic);
   chaseMusic.value = '';
   chaseMusicStart.value = 0;
+  chaseCheckpointEnabled.checked = settings.chaseCheckpointSfxEnabled !== false;
   chaseCheckpoint.value = settings.chaseCheckpointSeconds ?? 30;
   chaseSfxStatus.textContent = settings.chaseSfxDir ? `SFX: ${settings.chaseSfxDir}` : 'No SFX folder';
   syncChaseEnabledState();
@@ -230,6 +232,7 @@ function saveChaseSettings() {
       chaseMusicLibrary,
       chaseMusicUrl: '',
       chaseMusicStart: 0,
+      chaseCheckpointSfxEnabled: chaseCheckpointEnabled.checked,
       chaseCheckpointSeconds: chaseCheckpointSeconds(),
     }).then(() => {
       syncChaseEnabledState();
@@ -368,6 +371,7 @@ function chasePayload(command, id) {
         name: track?.name || null,
         startSeconds: chaseMusicStartSeconds(),
       } : null,
+      checkpointSfxEnabled: chaseCheckpointEnabled.checked,
       checkpointSeconds: chaseCheckpointSeconds(),
     },
   };
@@ -517,8 +521,8 @@ function loadFacecamSettings(settings) {
   facecamHotkey.value = settings.facecamHotkey ?? '5';
   setFacecamTriggerMode(settings.facecamTriggerMode || 'hold', false);
   refreshFacecamDevices(settings.facecamDeviceId || '');
-  facecamFps.value = settings.facecamFps ?? 8;
-  facecamWidth.value = settings.facecamWidth ?? 260;
+  facecamFps.value = Math.min(10, Math.max(2, Number(settings.facecamFps) || 6));
+  facecamWidth.value = Math.min(360, Math.max(120, Number(settings.facecamWidth) || 220));
   facecamPlacement = {
     x: Math.min(100, Math.max(0, Number(settings.facecamPositionX) || 78)),
     y: Math.min(100, Math.max(0, Number(settings.facecamPositionY) || 8)),
@@ -536,8 +540,8 @@ function saveFacecamSettings() {
       facecamHotkey: facecamHotkey.value.trim(),
       facecamTriggerMode,
       facecamDeviceId: facecamDevice.value,
-      facecamFps: Math.min(15, Math.max(2, Number(facecamFps.value) || 8)),
-      facecamWidth: Math.min(520, Math.max(120, Number(facecamWidth.value) || 260)),
+      facecamFps: Math.min(10, Math.max(2, Number(facecamFps.value) || 6)),
+      facecamWidth: Math.min(360, Math.max(120, Number(facecamWidth.value) || 220)),
       facecamPositionX: +facecamPlacement.x.toFixed(1),
       facecamPositionY: +facecamPlacement.y.toFixed(1),
     }).then(() => {
