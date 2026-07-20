@@ -156,9 +156,18 @@ app.post('/api/drop', async (req, res) => {
 });
 
 // Upload audio direct depuis l'overlay app
-app.post('/api/upload-audio', express.raw({ type: 'audio/*', limit: '10mb' }), (req, res) => {
+app.post('/api/upload-audio', express.raw({ type: 'audio/*', limit: '50mb' }), (req, res) => {
   try {
-    const ext = (req.get('Content-Type') || '').includes('webm') ? 'webm' : 'mp3';
+    const original = path.basename(req.get('X-File-Name') || '');
+    const originalExt = path.extname(original).toLowerCase().replace('.', '');
+    const mime = req.get('Content-Type') || '';
+    const ext = ['aac', 'm4a', 'mp3', 'ogg', 'wav', 'webm'].includes(originalExt)
+      ? originalExt
+      : mime.includes('webm') ? 'webm'
+      : mime.includes('ogg') ? 'ogg'
+      : mime.includes('wav') ? 'wav'
+      : mime.includes('mp4') ? 'm4a'
+      : 'mp3';
     const filename = `drop-${Date.now()}.${ext}`;
     const audioDir = path.join(__dirname, 'audio_cache');
     fs.mkdirSync(audioDir, { recursive: true });

@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShor
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
-const { pathToFileURL } = require('url');
+const { fileURLToPath, pathToFileURL } = require('url');
 const Store = require('electron-store');
 const { io } = require('socket.io-client');
 
@@ -52,6 +52,15 @@ store.delete('giphyApiKey');
 const clipsDir = path.join(app.getPath('userData'), 'clips');
 try { fs.mkdirSync(clipsDir, { recursive: true }); } catch {}
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.webm']);
+const AUDIO_MIME = {
+  '.aac': 'audio/aac',
+  '.m4a': 'audio/mp4',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.webm': 'audio/webm',
+};
+const uploadedChaseAudio = new Map();
 
 // The server deletes uploaded media after 5 min (see /api/upload-media). Cache each
 // clip's hosted URL and reuse it within that window instead of re-uploading the
@@ -451,6 +460,67 @@ function enrichChaseAction(action) {
   };
 }
 
+function localAudioPath(url) {
+  if (!url || !String(url).startsWith('file:')) return null;
+  try {
+    const filePath = fileURLToPath(url);
+    const ext = path.extname(filePath).toLowerCase();
+    if (!AUDIO_EXTENSIONS.has(ext)) return null;
+    return filePath;
+  } catch {
+    return null;
+  }
+}
+
+async function uploadChaseAudioUrl(url) {
+  const filePath = localAudioPath(url);
+  if (!filePath) return url;
+  const stat = fs.statSync(filePath);
+  const cacheKey = `${filePath}:${stat.size}:${stat.mtimeMs}`;
+  const cached = uploadedChaseAudio.get(cacheKey);
+  if (cached) return cached;
+  const ext = path.extname(filePath).toLowerCase();
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  const res = await fetch(`${serverUrl}/api/upload-audio`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': AUDIO_MIME[ext] || 'audio/mpeg',
+      'X-File-Name': path.basename(filePath),
+    },
+    body: fs.readFileSync(filePath),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.url) throw new Error(data.error || `audio upload failed: ${res.status}`);
+  uploadedChaseAudio.set(cacheKey, data.url);
+  return data.url;
+}
+
+async function prepareChaseActionForBroadcast(action) {
+  const prepared = enrichChaseAction(action);
+  if (!prepared || prepared.command === 'stop') return prepared;
+  const clone = {
+    ...prepared,
+    music: prepared.music ? { ...prepared.music } : prepared.music,
+    sfx: prepared.sfx ? {
+      start: prepared.sfx.start ? { ...prepared.sfx.start } : prepared.sfx.start,
+      end: prepared.sfx.end ? { ...prepared.sfx.end } : prepared.sfx.end,
+      checkpoints: Array.isArray(prepared.sfx.checkpoints)
+        ? prepared.sfx.checkpoints.map(sfx => ({ ...sfx }))
+        : prepared.sfx.checkpoints,
+    } : prepared.sfx,
+  };
+  if (clone.music?.url) clone.music.url = await uploadChaseAudioUrl(clone.music.url);
+  const sfxItems = [
+    clone.sfx?.start,
+    clone.sfx?.end,
+    ...(Array.isArray(clone.sfx?.checkpoints) ? clone.sfx.checkpoints : []),
+  ].filter(Boolean);
+  for (const sfx of sfxItems) {
+    if (sfx.url) sfx.url = await uploadChaseAudioUrl(sfx.url);
+  }
+  return clone;
+}
+
 async function sendChase(command) {
   try {
     return await postDrop(chaseAction(command));
@@ -723,7 +793,7 @@ async function postDrop({ url, target, caption, captionTop, captionBottom, capti
     size:         size    || 'm',
     positionX:    positionX ?? null,
     positionY:    positionY ?? null,
-    action:       enrichChaseAction(action) || null,
+    action:       await prepareChaseActionForBroadcast(action) || null,
   };
 
   const res = await fetch(`${serverUrl}/api/drop`, {
