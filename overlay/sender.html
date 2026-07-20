@@ -136,16 +136,16 @@
             <section class="settings-card">
               <h2>Timer & music</h2>
               <label>Max seconds<input id="chase-duration" class="field" type="number" min="5" max="180" step="5" value="60" /></label>
-              <label>Music mode<select id="chase-music-mode" class="field"><option value="manual">Manual URL</option><option value="library">Selected track</option><option value="random">Random track</option></select></label>
-              <label>Music track<select id="chase-music-select" class="field"><option value="">No imported tracks</option></select></label>
-              <label>Music URL<input id="chase-music" class="field" type="url" value="https://youtu.be/N_og7Lok8j8" /></label>
-              <label>Start at<input id="chase-music-start" class="field" type="number" min="0" max="600" step="1" value="10" /></label>
-              <button id="chase-import" class="ghost-btn" type="button">Import music</button>
+              <label>Music<select id="chase-music-select" class="field"><option value="">No server songs</option></select></label>
+              <input id="chase-music-mode" type="hidden" value="library" />
+              <input id="chase-music" type="hidden" value="" />
+              <input id="chase-music-start" type="hidden" value="0" />
+              <button id="chase-import" class="ghost-btn" type="button">Import music to server</button>
             </section>
             <section class="settings-card">
               <h2>Kobe SFX</h2>
               <label>SFX every<input id="chase-checkpoint" class="field" type="number" min="5" max="180" step="5" value="30" /></label>
-              <button id="chase-sfx-import" class="ghost-btn" type="button">Import SFX folder</button>
+              <button id="chase-sfx-import" class="ghost-btn" type="button">Import SFX to server</button>
               <div id="chase-sfx-status">No SFX folder</div>
             </section>
           </div>

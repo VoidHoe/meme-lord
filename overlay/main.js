@@ -594,6 +594,31 @@ async function uploadChaseAudioPath(filePath) {
   return uploadChaseAudioUrl(pathToFileURL(filePath).toString());
 }
 
+async function uploadChaseLibraryAudio(filePath, endpoint, extraHeaders = {}) {
+  const ext = path.extname(filePath).toLowerCase();
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  const res = await fetch(`${serverUrl}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': AUDIO_MIME[ext] || 'audio/mpeg',
+      'X-File-Name': path.basename(filePath),
+      ...extraHeaders,
+    },
+    body: fs.readFileSync(filePath),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `upload failed: ${res.status}`);
+  return data;
+}
+
+async function fetchChaseAudioLibrary() {
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  const res = await fetch(`${serverUrl}/api/chase-audio`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `library failed: ${res.status}`);
+  return data;
+}
+
 async function refreshPreparedTrack(track) {
   if (!track?.sourcePath || !fs.existsSync(track.sourcePath)) return track;
   const stat = fs.statSync(track.sourcePath);
@@ -654,15 +679,8 @@ async function prepareChaseActionForBroadcast(action) {
     const library = Array.isArray(store.get('chaseMusicLibrary')) ? store.get('chaseMusicLibrary') : [];
     const track = library.find(item => item.id === clone.music.trackId);
     if (track) {
-      const preparedTrack = await refreshPreparedTrack(track);
-      clone.music.url = preparedTrack.url;
-      clone.music.name = preparedTrack.name;
-      const index = library.findIndex(item => item.id === preparedTrack.id);
-      if (index !== -1) {
-        const nextLibrary = [...library];
-        nextLibrary[index] = preparedTrack;
-        store.set('chaseMusicLibrary', nextLibrary);
-      }
+      clone.music.url = track.url;
+      clone.music.name = track.name;
     }
   }
   if (clone.music?.url) clone.music.url = await uploadChaseAudioUrl(clone.music.url);
@@ -1075,30 +1093,16 @@ ipcMain.handle('choose-chase-audio', async () => {
     ],
   });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
-  const existing = Array.isArray(store.get('chaseMusicLibrary')) ? store.get('chaseMusicLibrary') : [];
-  const next = [...existing];
   const tracks = [];
   for (const filePath of result.filePaths) {
-    const stat = fs.statSync(filePath);
-    const existingTrack = next.find(track => track.sourcePath === filePath);
-    const track = {
-      id: existingTrack?.id || `music-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      name: path.basename(filePath, path.extname(filePath)),
-      sourcePath: filePath,
-      url: await uploadChaseAudioPath(filePath),
-      size: stat.size,
-      mtimeMs: stat.mtimeMs,
-      uploadedAt: Date.now(),
-    };
-    const index = next.findIndex(item => item.id === track.id);
-    if (index === -1) next.push(track);
-    else next[index] = track;
-    tracks.push(track);
+    const result = await uploadChaseLibraryAudio(filePath, '/api/chase-audio/music');
+    if (result.entry) tracks.push(result.entry);
   }
-  store.set('chaseMusicLibrary', next);
-  if (!store.get('chaseSelectedMusicId') && tracks[0]) store.set('chaseSelectedMusicId', tracks[0].id);
   if (tracks[0]) store.set('chaseMusicMode', 'library');
-  return { tracks, library: next };
+  const library = await fetchChaseAudioLibrary();
+  store.set('chaseMusicLibrary', library.music || []);
+  if (tracks[0]) store.set('chaseSelectedMusicId', tracks[0].id);
+  return { tracks, library: library.music || [] };
 });
 
 ipcMain.handle('choose-chase-sfx-folder', async () => {
@@ -1108,9 +1112,29 @@ ipcMain.handle('choose-chase-sfx-folder', async () => {
   });
   if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
   const dir = result.filePaths[0];
-  const sfx = await prepareSfxLibrary(listChaseSfx(dir));
-  store.set({ chaseSfxDir: dir, chaseSfxPrepared: sfx });
-  return { dir, sfx };
+  const sfx = listChaseSfx(dir);
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  await fetch(`${serverUrl}/api/chase-audio/sfx-reset`, { method: 'POST' });
+  const uploads = [];
+  if (sfx?.start?.sourcePath) uploads.push(uploadChaseLibraryAudio(sfx.start.sourcePath, '/api/chase-audio/sfx', { 'X-MemeDrop-Sfx-Role': 'start' }));
+  if (sfx?.end?.sourcePath) uploads.push(uploadChaseLibraryAudio(sfx.end.sourcePath, '/api/chase-audio/sfx', { 'X-MemeDrop-Sfx-Role': 'end' }));
+  for (const checkpoint of sfx?.checkpoints || []) {
+    if (checkpoint.sourcePath) uploads.push(uploadChaseLibraryAudio(checkpoint.sourcePath, '/api/chase-audio/sfx', { 'X-MemeDrop-Sfx-Role': 'checkpoint' }));
+  }
+  await Promise.all(uploads);
+  const library = await fetchChaseAudioLibrary();
+  store.set({ chaseSfxDir: dir, chaseSfxPrepared: library.sfx || null });
+  return { dir, sfx: library.sfx || null };
+});
+
+ipcMain.handle('get-chase-audio-library', async () => {
+  try {
+    const library = await fetchChaseAudioLibrary();
+    store.set({ chaseMusicLibrary: library.music || [], chaseSfxPrepared: library.sfx || null });
+    return library;
+  } catch (err) {
+    return { music: [], sfx: { start: null, end: null, checkpoints: [] }, error: err.message };
+  }
 });
 
 ipcMain.on('close-sender', () => {

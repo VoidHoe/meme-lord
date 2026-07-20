@@ -15,6 +15,7 @@ const io = new Server(server, { cors: { origin: '*' } });
 const persistentRoot = process.env.PERSISTENT_DATA_DIR || '/data';
 const tempAudioDir = path.join(__dirname, 'audio_cache');
 const persistentAudioDir = path.join(persistentRoot, 'audio_cache');
+const chaseLibraryFile = path.join(persistentRoot, 'chase-audio-library.json');
 
 // Servir les fichiers audio et media proxiés
 app.use('/audio', express.static(tempAudioDir));
@@ -40,6 +41,62 @@ purgeStaleCache(tempAudioDir);
 purgeStaleCache(path.join(__dirname, 'media_cache'));
 
 const router = createRouter(io);
+
+function publicUrl(req) {
+  return process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+}
+
+function audioExt(original, mime) {
+  const originalExt = path.extname(path.basename(original || '')).toLowerCase().replace('.', '');
+  return ['aac', 'm4a', 'mp3', 'ogg', 'wav', 'webm'].includes(originalExt)
+    ? originalExt
+    : mime.includes('webm') ? 'webm'
+    : mime.includes('ogg') ? 'ogg'
+    : mime.includes('wav') ? 'wav'
+    : mime.includes('mp4') ? 'm4a'
+    : 'mp3';
+}
+
+function cleanAudioName(name, fallback = 'Audio') {
+  return path.basename(name || fallback, path.extname(name || '')).replace(/[^\w .()[\]-]+/g, '').trim().slice(0, 80) || fallback;
+}
+
+function loadChaseLibrary() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(chaseLibraryFile, 'utf8'));
+    return {
+      music: Array.isArray(parsed.music) ? parsed.music : [],
+      sfx: {
+        start: parsed.sfx?.start || null,
+        end: parsed.sfx?.end || null,
+        checkpoints: Array.isArray(parsed.sfx?.checkpoints) ? parsed.sfx.checkpoints : [],
+      },
+    };
+  } catch {
+    return { music: [], sfx: { start: null, end: null, checkpoints: [] } };
+  }
+}
+
+function saveChaseLibrary(library) {
+  fs.mkdirSync(persistentRoot, { recursive: true });
+  fs.writeFileSync(chaseLibraryFile, JSON.stringify(library, null, 2));
+}
+
+function savePersistentAudio(req, prefix) {
+  const original = req.get('X-File-Name') || '';
+  const ext = audioExt(original, req.get('Content-Type') || '');
+  fs.mkdirSync(persistentAudioDir, { recursive: true });
+  const filename = `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+  const filepath = path.join(persistentAudioDir, filename);
+  fs.writeFileSync(filepath, req.body);
+  return {
+    id: `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name: cleanAudioName(original, prefix === 'music' ? 'Music' : 'SFX'),
+    url: `${publicUrl(req)}/audio/${filename}`,
+    filename,
+    uploadedAt: Date.now(),
+  };
+}
 
 io.on('connection', (socket) => {
   console.log(`[socket] client connecté: ${socket.id}`);
@@ -85,6 +142,49 @@ app.get('/api/users', (_req, res) => {
 });
 
 // Upload media direct depuis l'overlay app (images, GIFs, vidéos)
+app.get('/api/chase-audio', (_req, res) => {
+  res.json(loadChaseLibrary());
+});
+
+app.post('/api/chase-audio/music', express.raw({ type: 'audio/*', limit: '50mb' }), (req, res) => {
+  try {
+    const library = loadChaseLibrary();
+    const entry = savePersistentAudio(req, 'music');
+    library.music.unshift(entry);
+    saveChaseLibrary(library);
+    res.json({ ok: true, entry, library });
+  } catch (err) {
+    console.error('[api] erreur chase music:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/chase-audio/sfx-reset', (_req, res) => {
+  const library = loadChaseLibrary();
+  library.sfx = { start: null, end: null, checkpoints: [] };
+  saveChaseLibrary(library);
+  res.json({ ok: true, library });
+});
+
+app.post('/api/chase-audio/sfx', express.raw({ type: 'audio/*', limit: '50mb' }), (req, res) => {
+  try {
+    const role = ['start', 'end', 'checkpoint'].includes(req.get('X-MemeDrop-Sfx-Role'))
+      ? req.get('X-MemeDrop-Sfx-Role')
+      : 'checkpoint';
+    const library = loadChaseLibrary();
+    const entry = savePersistentAudio(req, 'sfx');
+    entry.role = role;
+    if (role === 'start') library.sfx.start = entry;
+    else if (role === 'end') library.sfx.end = entry;
+    else library.sfx.checkpoints.push(entry);
+    saveChaseLibrary(library);
+    res.json({ ok: true, entry, library });
+  } catch (err) {
+    console.error('[api] erreur chase sfx:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/upload-media', express.raw({ type: '*/*', limit: '50mb' }), (req, res) => {
   try {
     const ct = req.get('Content-Type') || '';

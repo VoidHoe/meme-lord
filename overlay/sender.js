@@ -206,10 +206,11 @@ function loadChaseSettings(settings) {
   chaseDuration.value = settings.chaseDuration ?? 60;
   chaseHotkey.value = settings.chaseHotkey ?? '6';
   chaseMusicLibrary = Array.isArray(settings.chaseMusicLibrary) ? settings.chaseMusicLibrary : [];
-  chaseMusicMode.value = settings.chaseMusicMode || 'manual';
-  renderChaseMusicLibrary(settings.chaseSelectedMusicId || '');
-  chaseMusic.value = settings.chaseMusicUrl || 'https://youtu.be/N_og7Lok8j8';
-  chaseMusicStart.value = settings.chaseMusicStart ?? 10;
+  const selectedMusic = settings.chaseMusicMode === 'random' ? '__random' : settings.chaseSelectedMusicId || '';
+  renderChaseMusicLibrary(selectedMusic);
+  refreshChaseAudioLibrary(selectedMusic);
+  chaseMusic.value = '';
+  chaseMusicStart.value = 0;
   chaseCheckpoint.value = settings.chaseCheckpointSeconds ?? 30;
   chaseSfxStatus.textContent = settings.chaseSfxDir ? `SFX: ${settings.chaseSfxDir}` : 'No SFX folder';
   syncChaseEnabledState();
@@ -224,11 +225,11 @@ function saveChaseSettings() {
       chaseTriggerMode,
       chaseDuration: chaseSeconds(),
       chaseHotkey: chaseHotkey.value.trim(),
-      chaseMusicMode: chaseMusicMode.value,
-      chaseSelectedMusicId: chaseMusicSelect.value,
+      chaseMusicMode: chaseMusicSelect.value === '__random' ? 'random' : 'library',
+      chaseSelectedMusicId: chaseMusicSelect.value === '__random' ? '' : chaseMusicSelect.value,
       chaseMusicLibrary,
-      chaseMusicUrl: chaseMusic.value.trim(),
-      chaseMusicStart: chaseMusicStartSeconds(),
+      chaseMusicUrl: '',
+      chaseMusicStart: 0,
       chaseCheckpointSeconds: chaseCheckpointSeconds(),
     }).then(() => {
       syncChaseEnabledState();
@@ -242,20 +243,41 @@ function renderChaseMusicLibrary(selectedId = chaseMusicSelect.value) {
   if (!chaseMusicLibrary.length) {
     const option = document.createElement('option');
     option.value = '';
-    option.textContent = 'No imported tracks';
+    option.textContent = 'No server songs';
     chaseMusicSelect.appendChild(option);
     chaseMusicSelect.value = '';
     return;
   }
+  const randomOption = document.createElement('option');
+  randomOption.value = '__random';
+  randomOption.textContent = 'Random song';
+  chaseMusicSelect.appendChild(randomOption);
   chaseMusicLibrary.forEach((track) => {
     const option = document.createElement('option');
     option.value = track.id;
     option.textContent = track.name || 'Imported track';
     chaseMusicSelect.appendChild(option);
   });
-  chaseMusicSelect.value = chaseMusicLibrary.some(track => track.id === selectedId)
+  chaseMusicSelect.value = selectedId === '__random'
+    ? '__random'
+    : chaseMusicLibrary.some(track => track.id === selectedId)
     ? selectedId
     : chaseMusicLibrary[0].id;
+}
+
+async function refreshChaseAudioLibrary(selectedId = chaseMusicSelect.value) {
+  if (!window.sender.getChaseAudioLibrary) return;
+  try {
+    const library = await window.sender.getChaseAudioLibrary();
+    if (library.error) throw new Error(library.error);
+    chaseMusicLibrary = Array.isArray(library.music) ? library.music : [];
+    renderChaseMusicLibrary(selectedId);
+    const sfx = library.sfx || {};
+    const sfxCount = (sfx.checkpoints?.length || 0) + (sfx.start ? 1 : 0) + (sfx.end ? 1 : 0);
+    chaseSfxStatus.textContent = sfxCount ? `Server SFX: ${sfxCount} files` : 'No server SFX';
+  } catch (error) {
+    setChaseStatus(`Could not refresh server audio: ${error.message}`, 'err');
+  }
 }
 
 function syncChaseEnabledState() {
@@ -282,11 +304,11 @@ async function importChaseAudio() {
       const byId = new Map(chaseMusicLibrary.map(track => [track.id, track]));
       result.tracks.forEach(track => byId.set(track.id, track));
       chaseMusicLibrary = [...byId.values()];
-      chaseMusicMode.value = 'library';
       renderChaseMusicLibrary(result.tracks[0].id);
       chaseMusicStart.value = 0;
       saveChaseSettings();
-      setChaseStatus(`${result.tracks.length} chase music track${result.tracks.length === 1 ? '' : 's'} prepared`, 'ok');
+      await refreshChaseAudioLibrary(result.tracks[0].id);
+      setChaseStatus(`${result.tracks.length} music track${result.tracks.length === 1 ? '' : 's'} uploaded to server`, 'ok');
     }
   } catch (error) {
     setChaseStatus(`Could not import audio: ${error.message}`, 'err');
@@ -298,9 +320,10 @@ async function importChaseSfxFolder() {
     const result = await window.sender.chooseChaseSfxFolder();
     if (result?.dir) {
       const count = (result.sfx?.checkpoints?.length || 0) + (result.sfx?.start ? 1 : 0);
-      chaseSfxStatus.textContent = `SFX: ${result.dir} (${count} files)`;
-      await window.sender.saveSettings({ chaseSfxDir: result.dir });
-      setChaseStatus(count ? 'Chase SFX folder imported' : 'No audio files found in that folder', count ? 'ok' : 'err');
+      chaseSfxStatus.textContent = `Server SFX: ${count} files`;
+      await window.sender.saveSettings({ chaseSfxDir: result.dir, chaseSfxPrepared: result.sfx || null });
+      await refreshChaseAudioLibrary();
+      setChaseStatus(count ? 'Chase SFX uploaded to server' : 'No audio files found in that folder', count ? 'ok' : 'err');
     }
   } catch (error) {
     setChaseStatus(`Could not import SFX: ${error.message}`, 'err');
@@ -324,12 +347,12 @@ function chaseCheckpointSeconds() {
 
 function chasePayload(command, id) {
   let track = null;
-  if (chaseMusicMode.value === 'random' && chaseMusicLibrary.length) {
+  if (chaseMusicSelect.value === '__random' && chaseMusicLibrary.length) {
     track = chaseMusicLibrary[Math.floor(Math.random() * chaseMusicLibrary.length)];
-  } else if (chaseMusicMode.value === 'library') {
+  } else {
     track = chaseMusicLibrary.find(item => item.id === chaseMusicSelect.value) || null;
   }
-  const musicUrl = track?.url || chaseMusic.value.trim();
+  const musicUrl = track?.url || '';
   return {
     target: targetSel.value || null,
     action: {

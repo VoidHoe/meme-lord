@@ -741,23 +741,38 @@ function startChaseSoundtrack(music) {
 
   const a = new Audio(music.url);
   let cleaned = false;
+  let started = false;
   const cleanup = () => {
     if (cleaned) return;
     cleaned = true;
     a.pause();
     a.src = '';
   };
+  const start = () => {
+    if (cleaned || started) return;
+    started = true;
+    const seekAndPlay = () => {
+      if (cleaned) return;
+      try {
+        if (Number.isFinite(a.duration) && startSeconds >= a.duration) a.currentTime = 0;
+        else if (startSeconds > 0) a.currentTime = startSeconds;
+      } catch {}
+      a.play().catch((error) => {
+        console.warn('[chase] audio play failed', error?.message || error);
+      });
+    };
+    if (a.readyState >= 1) seekAndPlay();
+    else a.addEventListener('loadedmetadata', seekAndPlay, { once: true });
+  };
   a.volume = Math.min(1, (settings.volumeSfx || 80) / 100 * master());
-  a.addEventListener('loadedmetadata', () => {
-    if (cleaned) return;
-    try { a.currentTime = startSeconds; } catch {}
-    a.play().catch(cleanup);
-  }, { once: true });
+  a.addEventListener('canplay', start, { once: true });
+  a.addEventListener('loadedmetadata', start, { once: true });
   a.addEventListener('error', () => {
     console.warn('[chase] audio failed', music.url);
     cleanup();
   }, { once: true });
   try { a.load(); } catch { cleanup(); }
+  setTimeout(start, 200);
   return cleanup;
 }
 
