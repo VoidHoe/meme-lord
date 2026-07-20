@@ -4,6 +4,7 @@ const badge     = document.getElementById('queue-badge');
 let queue     = [];
 let isPlaying = false;
 let settings  = { positionX: 50, positionY: 50, duration: 5000, volumeSfx: 80, volumeVoice: 100 };
+let activeChase = null;
 
 
 // Target box per size — media is scaled to FILL this box (small media upscaled,
@@ -31,6 +32,10 @@ window.memedrop.getSettings().then(s => { settings = s; applyPosition(); });
 window.memedrop.onSettingsChanged(s => { settings = s; applyPosition(); });
 
 window.memedrop.onDrop(event => {
+  if (event.action?.type === 'chase-control') {
+    handleChaseControl(event);
+    return;
+  }
   queue.push(event);
   updateBadge();
   if (!isPlaying) processQueue();
@@ -57,6 +62,21 @@ function applySize(mediaEl, size) {
   mediaEl.style.maxWidth  = 'none';
   mediaEl.style.maxHeight = 'none';
   container.style.maxWidth = w + 'px';
+}
+
+function fitCaptionCardFrame(mediaEl, frame, size) {
+  if (!mediaEl || !frame) return;
+  const [, boxH] = sizeBox(size);
+  const card = frame.querySelector('.impact-card-text');
+  if (!card) return;
+  const cardH = card.offsetHeight || 0;
+  const mediaH = mediaEl.offsetHeight || 0;
+  if (!cardH || !mediaH || cardH + mediaH <= boxH) return;
+  const availableH = Math.max(80, boxH - cardH);
+  const scale = availableH / mediaH;
+  mediaEl.style.width = Math.max(1, Math.round((mediaEl.offsetWidth || 1) * scale)) + 'px';
+  mediaEl.style.height = Math.max(1, Math.round(mediaH * scale)) + 'px';
+  container.style.maxWidth = mediaEl.style.width;
 }
 
 // Shrink a meme text block until it fits within maxH (a band of the image height),
@@ -170,6 +190,15 @@ async function processQueue() {
   container.style.maxWidth  = '';
   container.style.maxHeight = '';
 
+  if (event.action?.type === 'chase-timer') {
+    await playChaseTimer(event);
+    container.style.display = 'none';
+    container.innerHTML = '';
+    await sleep(200);
+    processQueue();
+    return;
+  }
+
   const fxList = event.effects || [];
   const legacyFade = fxList.includes('fade');
   const clampFade = (value, fallback = null) => {
@@ -204,8 +233,10 @@ async function processQueue() {
       // captioned, so the image + overlaid text animate together as one.
       let unit = mediaEl;
       const memeTextEls = [];
+      let memeFrame = null;
       if (memeCaption) {
         const frame = document.createElement('div');
+        memeFrame = frame;
         frame.className = captionStyle === 'card' ? 'impact-frame caption-card' : 'impact-frame';
         if (captionStyle === 'card') {
           const el = document.createElement('div');
@@ -245,6 +276,7 @@ async function processQueue() {
         const bandH   = Math.max(24,             Math.round((mediaEl.offsetHeight || 0) * 0.40));
         memeTextEls.forEach(el => fitMemeText(el, startPx, bandH));
       }
+      if (captionStyle === 'card') fitCaptionCardFrame(mediaEl, memeFrame, dropSize);
     }
   }
 
@@ -469,6 +501,176 @@ function playAudio(audio) {
     }
     resolve();
   });
+}
+
+async function playChaseTimer(event) {
+  const seconds = Math.min(180, Math.max(5, Number(event.action.durationSeconds) || 60));
+  startHeldChase(event);
+  await sleep(seconds * 1000);
+  stopHeldChase(event.action.id);
+}
+
+function handleChaseControl(event) {
+  if (event.action.command === 'stop') stopHeldChase(event.action.id);
+  else startHeldChase(event);
+}
+
+function startHeldChase(event) {
+  stopHeldChase();
+  const seconds = Math.min(180, Math.max(5, Number(event.action.durationSeconds) || 60));
+  const label = String(event.action.label || 'CHASE').slice(0, 16).toUpperCase();
+  const timer = document.createElement('div');
+  timer.className = 'chase-timer';
+  const kicker = document.createElement('div');
+  kicker.className = 'chase-kicker';
+  kicker.textContent = `${label} STARTED`;
+  const clock = document.createElement('div');
+  clock.className = 'chase-clock';
+  clock.textContent = '0.0';
+  const barWrap = document.createElement('div');
+  barWrap.className = 'chase-bar';
+  const bar = document.createElement('i');
+  barWrap.appendChild(bar);
+  timer.append(kicker, clock, barWrap);
+  document.body.appendChild(timer);
+  positionChaseTimer(timer, event.positionX ?? 50, event.positionY ?? 14);
+
+  const stopAudio = startChaseAudio(seconds, event.action.music);
+  const start = performance.now();
+  let raf = 0;
+
+  const tick = () => {
+    const elapsed = (performance.now() - start) / 1000;
+    clock.textContent = elapsed.toFixed(1);
+    bar.style.transform = `scaleX(${Math.min(1, elapsed / seconds)})`;
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+
+  activeChase = {
+    id: event.action.id || null,
+    el: timer,
+    stopAudio,
+    stopTimer: () => cancelAnimationFrame(raf),
+  };
+}
+
+function stopHeldChase(id = null) {
+  if (!activeChase) return;
+  if (id && activeChase.id && id !== activeChase.id) return;
+  const current = activeChase;
+  activeChase = null;
+  current.stopTimer();
+  current.stopAudio();
+  current.el.classList.add('done');
+  setTimeout(() => {
+    if (current.el.isConnected) current.el.remove();
+  }, 320);
+}
+
+function positionChaseTimer(el, px, py) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const rect = el.getBoundingClientRect();
+  const x = Math.round((px / 100) * vw - rect.width / 2);
+  const y = Math.round((py / 100) * vh - rect.height / 2);
+  el.style.left = `${Math.min(Math.max(0, x), Math.max(0, vw - rect.width))}px`;
+  el.style.top = `${Math.min(Math.max(0, y), Math.max(0, vh - rect.height))}px`;
+}
+
+function startChaseAudio(seconds, music) {
+  const stopSoundtrack = startChaseSoundtrack(music);
+  if (music?.url) return stopSoundtrack;
+  const ctx = getAudioCtx();
+  if (!ctx) {
+    playAudio({ type: 'sfx', url: 'sfx:vine_boom' });
+    return stopSoundtrack;
+  }
+
+  const gain = ctx.createGain();
+  gain.gain.value = Math.min(0.8, 0.24 * master());
+  gain.connect(ctx.destination);
+  let stopped = false;
+  const timers = [];
+  const nodes = [];
+
+  const tone = (freq, at, dur, type = 'sine', vol = 1) => {
+    if (stopped) return;
+    const osc = ctx.createOscillator();
+    const env = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, at);
+    env.gain.setValueAtTime(0.0001, at);
+    env.gain.exponentialRampToValueAtTime(vol, at + 0.015);
+    env.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    osc.connect(env);
+    env.connect(gain);
+    osc.start(at);
+    osc.stop(at + dur + 0.03);
+    nodes.push(osc, env);
+  };
+
+  const beat = () => {
+    if (stopped) return;
+    const now = ctx.currentTime;
+    tone(82, now, 0.13, 'sine', 1);
+    tone(246, now + 0.18, 0.08, 'square', 0.18);
+    tone(164, now + 0.36, 0.08, 'sawtooth', 0.12);
+  };
+
+  const interval = Math.max(320, Math.min(540, (seconds / 60) * 430));
+  beat();
+  timers.push(setInterval(beat, interval));
+  timers.push(setTimeout(() => playAudio({ type: 'sfx', url: 'sfx:vine_boom' }), 70));
+  timers.push(setTimeout(() => {
+    if (!stopped) {
+      tone(740, ctx.currentTime, 0.32, 'triangle', 0.32);
+      tone(554, ctx.currentTime + 0.1, 0.3, 'triangle', 0.26);
+    }
+  }, Math.max(0, seconds * 1000 - 600)));
+
+  return () => {
+    stopped = true;
+    stopSoundtrack();
+    timers.forEach(clearInterval);
+    timers.forEach(clearTimeout);
+    gain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.04);
+    setTimeout(() => {
+      nodes.forEach((node) => { try { node.disconnect(); } catch {} });
+      try { gain.disconnect(); } catch {}
+    }, 250);
+  };
+}
+
+function startChaseSoundtrack(music) {
+  if (!music?.url) return () => {};
+  const startSeconds = Math.min(600, Math.max(0, Number(music.startSeconds) || 0));
+  const youtubeId = extractYoutubeId(music.url);
+
+  if (youtubeId) {
+    const iframe = document.createElement('iframe');
+    iframe.className = 'chase-music-frame';
+    iframe.src = `https://www.youtube.com/embed/${youtubeId}?autoplay=1&start=${Math.floor(startSeconds)}&controls=0&rel=0&modestbranding=1`;
+    iframe.allow = 'autoplay; encrypted-media';
+    document.body.appendChild(iframe);
+    return () => {
+      iframe.src = 'about:blank';
+      iframe.remove();
+    };
+  }
+
+  const a = new Audio(music.url);
+  a.volume = Math.min(1, (settings.volumeSfx || 80) / 100 * master());
+  a.addEventListener('loadedmetadata', () => {
+    try { a.currentTime = startSeconds; } catch {}
+    a.play().catch(() => {});
+  }, { once: true });
+  a.addEventListener('error', () => console.warn('[chase] audio failed', music.url), { once: true });
+  a.load();
+  return () => {
+    a.pause();
+    a.src = '';
+  };
 }
 
 function waitForMedia(el) {

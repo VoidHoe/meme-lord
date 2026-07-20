@@ -98,7 +98,7 @@ app.post('/api/send-auth', (req, res) => {
 // API drop directe (depuis l'overlay app OU la page mobile, sans passer par Discord)
 app.post('/api/drop', async (req, res) => {
   const { media, mediaUrl, audio, effects, target, caption, captionTop, captionBottom, captionStyle, fadeInDuration, fadeOutDuration, positionX, positionY,
-          loop, loopDuration, loopTimes, trimStart, trimEnd, size, from } = req.body;
+          loop, loopDuration, loopTimes, trimStart, trimEnd, size, from, action } = req.body;
 
   // La page mobile envoie une URL brute (mediaUrl) ; on la résout côté serveur.
   // L'app desktop envoie déjà un objet `media` résolu → on n'y touche pas.
@@ -108,7 +108,7 @@ app.post('/api/drop', async (req, res) => {
     catch (e) { console.error('[api] resolveMedia échec:', e.message); }
   }
 
-  if (!resolved && !audio) return res.status(400).json({ error: 'media ou audio requis' });
+  if (!resolved && !audio && !action) return res.status(400).json({ error: 'media, audio ou action requis' });
 
   router.dispatch({
     media:        resolved  || null,
@@ -130,6 +130,7 @@ app.post('/api/drop', async (req, res) => {
     trimEnd:      trimEnd ?? null,
     size:         size      || 'm',
     from:         from      || null,
+    action:       action    || null,
   });
 
   console.log(`[api] drop reçu:`, JSON.stringify(req.body));

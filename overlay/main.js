@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut, session, protocol, shell, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, globalShortcut, session, protocol, shell, desktopCapturer, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
 const Store = require('electron-store');
 const { io } = require('socket.io-client');
 
@@ -24,6 +25,10 @@ const store = new Store({
     library: [],
     ttsVoice: '',
     snipHotkey: 'CommandOrControl+Shift+S',
+    chaseHotkey: '6',
+    chaseDuration: 60,
+    chaseMusicUrl: 'https://youtu.be/N_og7Lok8j8',
+    chaseMusicStart: 10,
   },
 });
 
@@ -71,6 +76,8 @@ let snipWindow       = null;
 let tray             = null;
 let socketClient     = null;
 let overlayRaiseTimer = null;
+let chaseHotkeyActive = false;
+let chaseHotkeyTimer = null;
 
 // Only allow one production MemeDrop at a time. Development can opt into a
 // separate visual-test instance without closing the user's installed app.
@@ -319,6 +326,54 @@ function registerHotkey() {
     }
   }
 
+  const chaseKey = store.get('chaseHotkey');
+  if (chaseKey) {
+    try {
+      const ok = globalShortcut.register(chaseKey, triggerChaseHotkey);
+      if (ok) console.log('[hotkey] chase enregistré:', chaseKey);
+      else console.error('[hotkey] chase indisponible:', chaseKey);
+    } catch (e) {
+      console.error('[hotkey] chase erreur:', e.message);
+    }
+  }
+
+}
+
+function chaseAction(command) {
+  const musicUrl = store.get('chaseMusicUrl') || '';
+  return {
+    action: {
+      type: 'chase-control',
+      command,
+      id: 'local-hotkey',
+      durationSeconds: Math.min(180, Math.max(5, Number(store.get('chaseDuration')) || 60)),
+      label: 'CHASE',
+      music: musicUrl ? {
+        url: musicUrl,
+        startSeconds: Math.min(600, Math.max(0, Number(store.get('chaseMusicStart')) || 0)),
+      } : null,
+    },
+    positionX: 50,
+    positionY: 14,
+  };
+}
+
+function sendChaseToOverlay(command) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  overlayWindow.webContents.send('drop', chaseAction(command));
+}
+
+function triggerChaseHotkey() {
+  if (!chaseHotkeyActive) {
+    chaseHotkeyActive = true;
+    sendChaseToOverlay('start');
+  }
+  if (chaseHotkeyTimer) clearTimeout(chaseHotkeyTimer);
+  chaseHotkeyTimer = setTimeout(() => {
+    chaseHotkeyActive = false;
+    chaseHotkeyTimer = null;
+    sendChaseToOverlay('stop');
+  }, 360);
 }
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
@@ -405,10 +460,10 @@ ipcMain.handle('resolve-link', async (_event, url) => {
 });
 
 // Resolve media + POST it to /api/drop from the Compose workspace.
-async function postDrop({ url, target, caption, captionTop, captionBottom, captionStyle, effects, audioUrl, fadeInDuration, fadeOutDuration, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY }) {
+async function postDrop({ url, target, caption, captionTop, captionBottom, captionStyle, effects, audioUrl, fadeInDuration, fadeOutDuration, loop, loopDuration, loopTimes, trimStart, trimEnd, size, positionX, positionY, action }) {
   const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
 
-  const media = await resolveMedia(url);
+  const media = url ? await resolveMedia(url) : null;
 
   const event = {
     media,
@@ -430,6 +485,7 @@ async function postDrop({ url, target, caption, captionTop, captionBottom, capti
     size:         size    || 'm',
     positionX:    positionX ?? null,
     positionY:    positionY ?? null,
+    action:       action || null,
   };
 
   const res = await fetch(`${serverUrl}/api/drop`, {
@@ -490,6 +546,27 @@ ipcMain.handle('get-users', async () => {
   } catch (err) {
     return { users: [], error: err.message };
   }
+});
+
+ipcMain.handle('preview-drop', async (_event, payload) => {
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send('drop', payload);
+    return { ok: true, local: true };
+  }
+  return { error: 'overlay unavailable' };
+});
+
+ipcMain.handle('choose-chase-audio', async () => {
+  const result = await dialog.showOpenDialog(senderWindow || undefined, {
+    title: 'Choose chase music',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'webm'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+  return { url: pathToFileURL(result.filePaths[0]).toString(), path: result.filePaths[0] };
 });
 
 ipcMain.on('close-sender', () => {

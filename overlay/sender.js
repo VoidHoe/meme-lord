@@ -65,6 +65,12 @@ const fadeInEnabled = $('fade-in-enabled');
 const fadeOutEnabled = $('fade-out-enabled');
 const fadeInDuration = $('fade-in-duration');
 const fadeOutDuration = $('fade-out-duration');
+const chaseBtn = $('chase-btn');
+const chaseDuration = $('chase-duration');
+const chaseHotkey = $('chase-hotkey');
+const chaseMusic = $('chase-music');
+const chaseMusicStart = $('chase-music-start');
+const chaseImport = $('chase-import');
 
 const PANELS = {
   compose: 'compose-panel',
@@ -111,6 +117,7 @@ if (window.sender.onSnipResult) {
 window.sender.getSettings().then((settings) => {
   setAnchor(settings.anchorPosition || 'center', false);
   setSize(settings.dropSize || 'm', false);
+  loadChaseSettings(settings);
 });
 loadUsers();
 
@@ -140,6 +147,132 @@ async function loadUsers() {
   }
 }
 refreshBtn.addEventListener('click', loadUsers);
+
+let chaseHoldId = null;
+
+chaseBtn.addEventListener('pointerdown', startChaseHold);
+chaseBtn.addEventListener('pointerup', stopChaseHold);
+chaseBtn.addEventListener('pointercancel', stopChaseHold);
+chaseBtn.addEventListener('pointerleave', (event) => {
+  if (event.buttons === 1) stopChaseHold(event);
+});
+chaseImport.addEventListener('click', importChaseAudio);
+[chaseDuration, chaseHotkey, chaseMusic, chaseMusicStart].forEach((input) => {
+  input.addEventListener('change', saveChaseSettings);
+  input.addEventListener('blur', saveChaseSettings);
+});
+
+function loadChaseSettings(settings) {
+  chaseDuration.value = settings.chaseDuration ?? 60;
+  chaseHotkey.value = settings.chaseHotkey ?? '6';
+  chaseMusic.value = settings.chaseMusicUrl || 'https://youtu.be/N_og7Lok8j8';
+  chaseMusicStart.value = settings.chaseMusicStart ?? 10;
+}
+
+let chaseSaveTimer = null;
+function saveChaseSettings() {
+  if (chaseSaveTimer) clearTimeout(chaseSaveTimer);
+  chaseSaveTimer = setTimeout(() => {
+    window.sender.saveSettings({
+      chaseDuration: chaseSeconds(),
+      chaseHotkey: chaseHotkey.value.trim(),
+      chaseMusicUrl: chaseMusic.value.trim(),
+      chaseMusicStart: chaseMusicStartSeconds(),
+    });
+  }, 150);
+}
+
+async function importChaseAudio() {
+  try {
+    const result = await window.sender.chooseChaseAudio();
+    if (result?.url) {
+      chaseMusic.value = result.url;
+      chaseMusicStart.value = 0;
+      saveChaseSettings();
+      setStatus('Chase audio imported', 'ok');
+    }
+  } catch (error) {
+    setStatus(`Could not import audio: ${error.message}`, 'err');
+  }
+}
+
+function chaseSeconds() {
+  const value = Number(chaseDuration.value);
+  return Math.min(180, Math.max(5, Number.isFinite(value) ? value : 60));
+}
+
+function chaseMusicStartSeconds() {
+  const value = Number(chaseMusicStart.value);
+  return Math.min(600, Math.max(0, Number.isFinite(value) ? value : 10));
+}
+
+function chasePayload(command, id) {
+  const musicUrl = chaseMusic.value.trim();
+  return {
+    target: targetSel.value || null,
+    action: {
+      type: 'chase-control',
+      command,
+      id,
+      durationSeconds: chaseSeconds(),
+      label: 'CHASE',
+      sound: 'hype',
+      music: musicUrl ? { url: musicUrl, startSeconds: chaseMusicStartSeconds() } : null,
+    },
+  };
+}
+
+async function sendChaseAction(payload) {
+  try {
+    const result = await window.sender.sendDrop(payload);
+    if (!result.ok) throw new Error(result.error || 'Server error');
+    return result;
+  } catch (error) {
+    if (payload.action && window.sender.previewDrop) {
+      const local = await window.sender.previewDrop(payload);
+      if (local.ok) return { ...local, fallbackError: error.message };
+    }
+    throw error;
+  }
+}
+
+async function startChaseHold(event) {
+  if (chaseHoldId) return;
+  event.preventDefault();
+  chaseHoldId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  try { chaseBtn.setPointerCapture(event.pointerId); } catch {}
+  chaseBtn.classList.add('holding');
+  setStatus('Holding chase timer...');
+  const payload = chasePayload('start', chaseHoldId);
+  saveChaseSettings();
+  try {
+    const result = await sendChaseAction(payload);
+    setStatus(result.local ? 'Local chase preview' : 'Chase timer live!', 'ok');
+    window.sender.saveHistory({
+      ...payload,
+      id: Date.now(),
+      timestamp: Date.now(),
+      caption: 'Held chase timer',
+    });
+  } catch (error) {
+    setStatus(`Could not start timer: ${error.message}`, 'err');
+  }
+}
+
+async function stopChaseHold(event) {
+  if (!chaseHoldId) return;
+  event.preventDefault();
+  const id = chaseHoldId;
+  chaseHoldId = null;
+  chaseBtn.classList.remove('holding');
+  try { chaseBtn.releasePointerCapture(event.pointerId); } catch {}
+  try {
+    await sendChaseAction(chasePayload('stop', id));
+    setStatus('Chase stopped', 'ok');
+  } catch (error) {
+    setStatus(`Could not stop timer: ${error.message}`, 'err');
+  }
+}
 
 document.querySelectorAll('.anchor-btn').forEach((button) => button.addEventListener('click', () => setAnchor(button.dataset.anchor, true)));
 function setAnchor(anchor, persist) {

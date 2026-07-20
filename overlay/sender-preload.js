@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('sender', {
   getSettings:    ()                 => ipcRenderer.invoke('get-settings'),
   saveSettings:   (settings)         => ipcRenderer.invoke('save-settings', settings),
   sendDrop:       (payload)          => ipcRenderer.invoke('send-drop', payload),
+  previewDrop:    (payload)          => ipcRenderer.invoke('preview-drop', payload),
+  chooseChaseAudio: ()               => ipcRenderer.invoke('choose-chase-audio'),
   resolveLink:    (url)              => ipcRenderer.invoke('resolve-link', url),
   uploadAudio:    (buf)              => ipcRenderer.invoke('upload-audio', buf),
   uploadMedia:    (buf, mime)        => ipcRenderer.invoke('upload-media', { buffer: buf, mimeType: mime }),
