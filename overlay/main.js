@@ -28,11 +28,19 @@ const store = new Store({
     snipHotkey: 'CommandOrControl+Shift+S',
     chaseEnabled: false,
     chaseHotkey: '6',
+    chaseTriggerMode: 'hold',
     chaseDuration: 60,
     chaseMusicUrl: 'https://youtu.be/N_og7Lok8j8',
     chaseMusicStart: 10,
     chaseSfxDir: '',
     chaseCheckpointSeconds: 30,
+    facecamEnabled: false,
+    facecamHotkey: '5',
+    facecamFps: 8,
+    facecamDeviceId: '',
+    facecamPositionX: 78,
+    facecamPositionY: 8,
+    facecamWidth: 260,
   },
 });
 
@@ -78,12 +86,21 @@ let overlayWindow    = null;
 let settingsWindow   = null;
 let senderWindow     = null;
 let snipWindow       = null;
+let facecamWindow    = null;
 let tray             = null;
 let socketClient     = null;
 let overlayRaiseTimer = null;
 let chaseHotkeyActive = false;
 let chaseHotkeyTimer = null;
 let chaseHotkeyRepeatSeen = false;
+let chaseToggleActive = false;
+let chaseToggleHotkeyLocked = false;
+let chaseToggleHotkeyTimer = null;
+let chaseToggleAutoTimer = null;
+let facecamHotkeyActive = false;
+let facecamHotkeyTimer = null;
+let facecamHotkeyRepeatSeen = false;
+let facecamSessionId = null;
 
 // Only allow one production MemeDrop at a time. Development can opt into a
 // separate visual-test instance without closing the user's installed app.
@@ -185,6 +202,27 @@ function createSenderWindow() {
 
   senderWindow.loadFile(path.join(__dirname, 'sender.html'));
   senderWindow.on('closed', () => { senderWindow = null; });
+}
+
+function createFacecamWindow() {
+  if (facecamWindow && !facecamWindow.isDestroyed()) return facecamWindow;
+
+  facecamWindow = new BrowserWindow({
+    width: 320,
+    height: 240,
+    show: false,
+    frame: false,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'facecam-preload.js'),
+      contextIsolation: true,
+      autoplayPolicy: 'no-user-gesture-required',
+    },
+  });
+
+  facecamWindow.loadFile(path.join(__dirname, 'facecam.html'));
+  facecamWindow.on('closed', () => { facecamWindow = null; });
+  return facecamWindow;
 }
 
 // Send a message to the sender once it has finished loading (creating it if needed).
@@ -298,6 +336,14 @@ function connectSocket() {
     }
   });
 
+  ['facecam-start', 'facecam-frame', 'facecam-stop'].forEach(channel => {
+    socketClient.on(channel, (event) => {
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.webContents.send(channel, event);
+      }
+    });
+  });
+
   socketClient.on('disconnect', () => console.log('[socket] déconnecté'));
   socketClient.on('connect_error', (err) => console.error('[socket] erreur connexion:', err.message));
 }
@@ -340,6 +386,17 @@ function registerHotkey() {
       else console.error('[hotkey] chase indisponible:', chaseKey);
     } catch (e) {
       console.error('[hotkey] chase erreur:', e.message);
+    }
+  }
+
+  const facecamKey = store.get('facecamEnabled') ? store.get('facecamHotkey') : '';
+  if (facecamKey) {
+    try {
+      const ok = globalShortcut.register(facecamKey, triggerFacecamHotkey);
+      if (ok) console.log('[hotkey] facecam enregistrÃ©:', facecamKey);
+      else console.error('[hotkey] facecam indisponible:', facecamKey);
+    } catch (e) {
+      console.error('[hotkey] facecam erreur:', e.message);
     }
   }
 
@@ -400,6 +457,10 @@ function sendChaseToOverlay(command) {
 }
 
 function triggerChaseHotkey() {
+  if (store.get('chaseTriggerMode') === 'toggle') {
+    triggerChaseToggleHotkey();
+    return;
+  }
   if (!chaseHotkeyActive) {
     chaseHotkeyActive = true;
     chaseHotkeyRepeatSeen = false;
@@ -417,6 +478,101 @@ function triggerChaseHotkey() {
   }, releaseGraceMs);
 }
 
+function triggerChaseToggleHotkey() {
+  if (chaseToggleHotkeyLocked) {
+    if (chaseToggleHotkeyTimer) clearTimeout(chaseToggleHotkeyTimer);
+    chaseToggleHotkeyTimer = setTimeout(() => {
+      chaseToggleHotkeyLocked = false;
+      chaseToggleHotkeyTimer = null;
+    }, 450);
+    return;
+  }
+  chaseToggleHotkeyLocked = true;
+  chaseToggleActive = !chaseToggleActive;
+  sendChaseToOverlay(chaseToggleActive ? 'start' : 'stop');
+  if (chaseToggleAutoTimer) {
+    clearTimeout(chaseToggleAutoTimer);
+    chaseToggleAutoTimer = null;
+  }
+  if (chaseToggleActive) {
+    const durationMs = Math.min(180, Math.max(5, Number(store.get('chaseDuration')) || 60)) * 1000;
+    chaseToggleAutoTimer = setTimeout(() => {
+      chaseToggleActive = false;
+      chaseToggleAutoTimer = null;
+    }, durationMs + 1000);
+  }
+  if (chaseToggleHotkeyTimer) clearTimeout(chaseToggleHotkeyTimer);
+  chaseToggleHotkeyTimer = setTimeout(() => {
+    chaseToggleHotkeyLocked = false;
+    chaseToggleHotkeyTimer = null;
+  }, 450);
+}
+
+function facecamPayload(extra = {}) {
+  const width = Math.min(520, Math.max(120, Number(store.get('facecamWidth')) || 260));
+  return {
+    id: facecamSessionId,
+    target: null,
+    from: store.get('discordUsername') || 'me',
+    positionX: Math.min(100, Math.max(0, Number(store.get('facecamPositionX')) || 78)),
+    positionY: Math.min(100, Math.max(0, Number(store.get('facecamPositionY')) || 8)),
+    width,
+    height: Math.round(width * 0.75),
+    ...extra,
+  };
+}
+
+function startFacecam() {
+  if (facecamSessionId) return;
+  facecamSessionId = `facecam-${Date.now()}`;
+  const payload = facecamPayload();
+  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.webContents.send('facecam-start', payload);
+  if (socketClient) socketClient.emit('facecam-start', payload);
+  const win = createFacecamWindow();
+  const startCapture = () => {
+    if (!facecamWindow || facecamWindow.isDestroyed()) return;
+    facecamWindow.webContents.send('facecam-capture-start', {
+      deviceId: store.get('facecamDeviceId') || '',
+      fps: Math.min(15, Math.max(2, Number(store.get('facecamFps')) || 8)),
+      width: payload.width,
+      height: payload.height,
+    });
+  };
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', startCapture);
+  else startCapture();
+}
+
+function stopFacecam() {
+  if (!facecamSessionId) return;
+  const id = facecamSessionId;
+  facecamSessionId = null;
+  if (facecamWindow && !facecamWindow.isDestroyed()) {
+    facecamWindow.webContents.send('facecam-capture-stop');
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send('facecam-stop', { id });
+  }
+  if (socketClient) socketClient.emit('facecam-stop', { id });
+}
+
+function triggerFacecamHotkey() {
+  if (!facecamHotkeyActive) {
+    facecamHotkeyActive = true;
+    facecamHotkeyRepeatSeen = false;
+    startFacecam();
+  } else {
+    facecamHotkeyRepeatSeen = true;
+  }
+  if (facecamHotkeyTimer) clearTimeout(facecamHotkeyTimer);
+  const releaseGraceMs = facecamHotkeyRepeatSeen ? 380 : 950;
+  facecamHotkeyTimer = setTimeout(() => {
+    facecamHotkeyActive = false;
+    facecamHotkeyRepeatSeen = false;
+    facecamHotkeyTimer = null;
+    stopFacecam();
+  }, releaseGraceMs);
+}
+
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 
 ipcMain.handle('get-settings', () => store.store);
@@ -425,11 +581,43 @@ ipcMain.handle('save-settings', (_event, newSettings) => {
   store.set(newSettings);
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('settings-changed', store.store);
-    if (newSettings.chaseEnabled === false) sendChaseToOverlay('stop');
+    if (newSettings.chaseEnabled === false) {
+      chaseHotkeyActive = false;
+      chaseToggleActive = false;
+      if (chaseHotkeyTimer) clearTimeout(chaseHotkeyTimer);
+      if (chaseToggleHotkeyTimer) clearTimeout(chaseToggleHotkeyTimer);
+      if (chaseToggleAutoTimer) clearTimeout(chaseToggleAutoTimer);
+      chaseHotkeyTimer = null;
+      chaseToggleHotkeyTimer = null;
+      chaseToggleAutoTimer = null;
+      sendChaseToOverlay('stop');
+    }
+    if (newSettings.facecamEnabled === false) stopFacecam();
   }
   connectSocket();
   registerHotkey();
   return store.store;
+});
+
+ipcMain.on('facecam-frame', (_event, image) => {
+  if (!facecamSessionId || !image) return;
+  const payload = facecamPayload({ image });
+  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.webContents.send('facecam-frame', payload);
+  if (socketClient) socketClient.emit('facecam-frame', payload);
+});
+
+ipcMain.on('facecam-status', (_event, status) => {
+  sendToSender('facecam-status', status);
+});
+
+ipcMain.handle('preview-facecam-start', () => {
+  startFacecam();
+  return { ok: true };
+});
+
+ipcMain.handle('preview-facecam-stop', () => {
+  stopFacecam();
+  return { ok: true };
 });
 
 // Settings lives in the sender now (as a tab) — route old callers there.

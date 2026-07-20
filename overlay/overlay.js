@@ -1,10 +1,12 @@
 const container = document.getElementById('drop-container');
 const badge     = document.getElementById('queue-badge');
+const facecamContainer = document.getElementById('facecam-container');
 
 let queue     = [];
 let isPlaying = false;
 let settings  = { positionX: 50, positionY: 50, duration: 5000, volumeSfx: 80, volumeVoice: 100 };
 let activeChase = null;
+const facecams = new Map();
 
 
 // Target box per size — media is scaled to FILL this box (small media upscaled,
@@ -40,6 +42,9 @@ window.memedrop.onDrop(event => {
   updateBadge();
   if (!isPlaying) processQueue();
 });
+window.memedrop.onFacecamStart(event => startFacecamOverlay(event));
+window.memedrop.onFacecamFrame(event => updateFacecamOverlay(event));
+window.memedrop.onFacecamStop(event => stopFacecamOverlay(event));
 
 // Normalize the rendered size: scale media to fill its box on the dominant axis,
 // keeping aspect ratio (small media is upscaled). Runs after the media has loaded
@@ -781,4 +786,56 @@ function extractYoutubeId(url) {
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function startFacecamOverlay(event) {
+  const id = event.id || event.from || 'facecam';
+  stopFacecamOverlay({ id, instant: true });
+  const tile = document.createElement('div');
+  tile.className = 'facecam-tile';
+  const img = document.createElement('img');
+  img.alt = event.from ? `${event.from} facecam` : 'Facecam';
+  const label = document.createElement('div');
+  label.className = 'facecam-label';
+  label.textContent = event.from || 'LIVE';
+  tile.append(img, label);
+  positionFacecamTile(tile, event);
+  facecamContainer.appendChild(tile);
+  facecams.set(id, { tile, img });
+}
+
+function updateFacecamOverlay(event) {
+  const id = event.id || event.from || 'facecam';
+  if (!facecams.has(id)) startFacecamOverlay(event);
+  const item = facecams.get(id);
+  if (item) {
+    positionFacecamTile(item.tile, event);
+    if (event.image) item.img.src = event.image;
+  }
+}
+
+function stopFacecamOverlay(event = {}) {
+  const id = event.id || event.from || 'facecam';
+  const item = facecams.get(id);
+  if (!item) return;
+  facecams.delete(id);
+  item.tile.classList.add('done');
+  const remove = () => {
+    if (item.tile.isConnected) item.tile.remove();
+  };
+  if (event.instant) remove();
+  else setTimeout(remove, 240);
+}
+
+function positionFacecamTile(tile, event) {
+  const width = Math.min(520, Math.max(120, Number(event.width) || 260));
+  const height = Math.min(390, Math.max(90, Number(event.height) || Math.round(width * 0.75)));
+  const xPct = Math.min(100, Math.max(0, Number(event.positionX) || 0));
+  const yPct = Math.min(100, Math.max(0, Number(event.positionY) || 0));
+  const x = Math.round((xPct / 100) * Math.max(0, window.innerWidth - width));
+  const y = Math.round((yPct / 100) * Math.max(0, window.innerHeight - height));
+  tile.style.width = `${width}px`;
+  tile.style.height = `${height}px`;
+  tile.style.left = `${x}px`;
+  tile.style.top = `${y}px`;
 }

@@ -67,6 +67,7 @@ const fadeInDuration = $('fade-in-duration');
 const fadeOutDuration = $('fade-out-duration');
 const chaseEnabled = $('chase-enabled');
 const chaseBtn = $('chase-btn');
+const chaseModeBtns = [...document.querySelectorAll('[data-chase-mode]')];
 const chaseDuration = $('chase-duration');
 const chaseHotkey = $('chase-hotkey');
 const chaseMusic = $('chase-music');
@@ -76,12 +77,24 @@ const chaseCheckpoint = $('chase-checkpoint');
 const chaseSfxImport = $('chase-sfx-import');
 const chaseSfxStatus = $('chase-sfx-status');
 const chaseStatus = $('chase-status');
+const facecamEnabled = $('facecam-enabled');
+const facecamHotkey = $('facecam-hotkey');
+const facecamFps = $('facecam-fps');
+const facecamWidth = $('facecam-width');
+const facecamBtn = $('facecam-btn');
+const facecamStatus = $('facecam-status');
+const facecamPlacementPad = $('facecam-placement-pad');
+const facecamPlacementBox = $('facecam-placement-box');
+const facecamPosX = $('facecam-pos-x');
+const facecamPosY = $('facecam-pos-y');
+let facecamPlacement = { x: 78, y: 8 };
 
 const PANELS = {
   compose: 'compose-panel',
   library: 'library-panel',
   history: 'history-panel',
   chase: 'chase-panel',
+  facecam: 'facecam-panel',
   settings: 'settings-panel',
 };
 
@@ -92,6 +105,7 @@ function showTab(name) {
   if (name === 'library') renderLibrary();
   if (name === 'history') loadHistory();
   if (name === 'chase') window.sender.getSettings().then(loadChaseSettings);
+  if (name === 'facecam') window.sender.getSettings().then(loadFacecamSettings);
   if (name === 'settings') loadSettingsForm();
 }
 
@@ -125,6 +139,7 @@ window.sender.getSettings().then((settings) => {
   setAnchor(settings.anchorPosition || 'center', false);
   setSize(settings.dropSize || 'm', false);
   loadChaseSettings(settings);
+  loadFacecamSettings(settings);
 });
 loadUsers();
 
@@ -156,12 +171,15 @@ async function loadUsers() {
 refreshBtn.addEventListener('click', loadUsers);
 
 let chaseHoldId = null;
+let chaseTriggerMode = 'hold';
+let chaseToggleId = null;
+let chaseToggleAutoTimer = null;
 
-chaseBtn.addEventListener('pointerdown', startChaseHold);
+chaseBtn.addEventListener('pointerdown', handleChaseButtonDown);
 chaseBtn.addEventListener('pointerup', stopChaseHold);
 chaseBtn.addEventListener('pointercancel', stopChaseHold);
 chaseBtn.addEventListener('pointerleave', (event) => {
-  if (event.buttons === 1) stopChaseHold(event);
+  if (chaseTriggerMode === 'hold' && event.buttons === 1) stopChaseHold(event);
 });
 chaseImport.addEventListener('click', importChaseAudio);
 chaseSfxImport.addEventListener('click', importChaseSfxFolder);
@@ -169,9 +187,16 @@ chaseSfxImport.addEventListener('click', importChaseSfxFolder);
   input.addEventListener('change', saveChaseSettings);
   input.addEventListener('blur', saveChaseSettings);
 });
+chaseModeBtns.forEach((button) => {
+  button.addEventListener('click', () => {
+    setChaseTriggerMode(button.dataset.chaseMode || 'hold');
+    saveChaseSettings();
+  });
+});
 
 function loadChaseSettings(settings) {
   chaseEnabled.checked = !!settings.chaseEnabled;
+  setChaseTriggerMode(settings.chaseTriggerMode || 'hold', false);
   chaseDuration.value = settings.chaseDuration ?? 60;
   chaseHotkey.value = settings.chaseHotkey ?? '6';
   chaseMusic.value = settings.chaseMusicUrl || 'https://youtu.be/N_og7Lok8j8';
@@ -187,6 +212,7 @@ function saveChaseSettings() {
   chaseSaveTimer = setTimeout(() => {
     window.sender.saveSettings({
       chaseEnabled: chaseEnabled.checked,
+      chaseTriggerMode,
       chaseDuration: chaseSeconds(),
       chaseHotkey: chaseHotkey.value.trim(),
       chaseMusicUrl: chaseMusic.value.trim(),
@@ -202,6 +228,18 @@ function saveChaseSettings() {
 function syncChaseEnabledState() {
   chaseBtn.disabled = !chaseEnabled.checked;
   $('chase-panel').classList.toggle('chase-off', !chaseEnabled.checked);
+  chaseBtn.textContent = chaseTriggerMode === 'toggle'
+    ? (chaseToggleId ? 'Stop chase' : 'Toggle chase')
+    : 'Hold chase';
+}
+
+function setChaseTriggerMode(mode, updateStatus = true) {
+  chaseTriggerMode = mode === 'toggle' ? 'toggle' : 'hold';
+  chaseModeBtns.forEach((button) => {
+    button.classList.toggle('active', button.dataset.chaseMode === chaseTriggerMode);
+  });
+  syncChaseEnabledState();
+  if (updateStatus) setChaseStatus(`Chase trigger: ${chaseTriggerMode}`, 'ok');
 }
 
 async function importChaseAudio() {
@@ -295,6 +333,7 @@ async function startChaseHold(event) {
 }
 
 async function stopChaseHold(event) {
+  if (chaseTriggerMode !== 'hold') return;
   if (!chaseHoldId) return;
   event.preventDefault();
   const id = chaseHoldId;
@@ -309,9 +348,191 @@ async function stopChaseHold(event) {
   }
 }
 
+async function handleChaseButtonDown(event) {
+  if (chaseTriggerMode === 'toggle') {
+    await toggleChase(event);
+    return;
+  }
+  await startChaseHold(event);
+}
+
+async function toggleChase(event) {
+  if (!chaseEnabled.checked) return;
+  event.preventDefault();
+  if (chaseToggleId) {
+    const id = chaseToggleId;
+    chaseToggleId = null;
+    if (chaseToggleAutoTimer) clearTimeout(chaseToggleAutoTimer);
+    chaseToggleAutoTimer = null;
+    chaseBtn.classList.remove('holding');
+    syncChaseEnabledState();
+    try {
+      await sendChaseAction(chasePayload('stop', id));
+      setChaseStatus('Chase stopped', 'ok');
+    } catch (error) {
+      setChaseStatus(`Could not stop timer: ${error.message}`, 'err');
+    }
+    return;
+  }
+  chaseToggleId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  chaseBtn.classList.add('holding');
+  syncChaseEnabledState();
+  setChaseStatus('Chase toggled on...');
+  const payload = chasePayload('start', chaseToggleId);
+  saveChaseSettings();
+  try {
+    const result = await sendChaseAction(payload);
+    setChaseStatus(result.local ? 'Local chase preview' : 'Chase timer live!', 'ok');
+    if (chaseToggleAutoTimer) clearTimeout(chaseToggleAutoTimer);
+    chaseToggleAutoTimer = setTimeout(() => {
+      if (chaseToggleId === payload.action.id) {
+        chaseToggleId = null;
+        chaseToggleAutoTimer = null;
+        chaseBtn.classList.remove('holding');
+        syncChaseEnabledState();
+        setChaseStatus('Chase completed', 'ok');
+      }
+    }, chaseSeconds() * 1000 + 1000);
+    window.sender.saveHistory({
+      ...payload,
+      id: Date.now(),
+      timestamp: Date.now(),
+      caption: 'Toggled chase timer',
+    });
+  } catch (error) {
+    chaseToggleId = null;
+    if (chaseToggleAutoTimer) clearTimeout(chaseToggleAutoTimer);
+    chaseToggleAutoTimer = null;
+    chaseBtn.classList.remove('holding');
+    syncChaseEnabledState();
+    setChaseStatus(`Could not start timer: ${error.message}`, 'err');
+  }
+}
+
 function setChaseStatus(message, type = '') {
   chaseStatus.textContent = message;
   chaseStatus.className = type;
+}
+
+let facecamHolding = false;
+
+facecamBtn.addEventListener('pointerdown', startFacecamHold);
+facecamBtn.addEventListener('pointerup', stopFacecamHold);
+facecamBtn.addEventListener('pointercancel', stopFacecamHold);
+facecamBtn.addEventListener('pointerleave', (event) => {
+  if (event.buttons === 1) stopFacecamHold(event);
+});
+[facecamEnabled, facecamHotkey, facecamFps, facecamWidth].forEach((input) => {
+  input.addEventListener('change', saveFacecamSettings);
+  input.addEventListener('blur', saveFacecamSettings);
+});
+facecamPlacementBox.addEventListener('pointerdown', startFacecamPlacementDrag);
+if (window.sender.onFacecamStatus) {
+  window.sender.onFacecamStatus((status) => {
+    if (status?.error) setFacecamStatus(`Camera error: ${status.error}`, 'err');
+    else if (status?.ok) setFacecamStatus('Camera live', 'ok');
+  });
+}
+
+function loadFacecamSettings(settings) {
+  facecamEnabled.checked = !!settings.facecamEnabled;
+  facecamHotkey.value = settings.facecamHotkey ?? '5';
+  facecamFps.value = settings.facecamFps ?? 8;
+  facecamWidth.value = settings.facecamWidth ?? 260;
+  facecamPlacement = {
+    x: Math.min(100, Math.max(0, Number(settings.facecamPositionX) || 78)),
+    y: Math.min(100, Math.max(0, Number(settings.facecamPositionY) || 8)),
+  };
+  renderFacecamPlacement();
+  syncFacecamEnabledState();
+}
+
+let facecamSaveTimer = null;
+function saveFacecamSettings() {
+  if (facecamSaveTimer) clearTimeout(facecamSaveTimer);
+  facecamSaveTimer = setTimeout(() => {
+    window.sender.saveSettings({
+      facecamEnabled: facecamEnabled.checked,
+      facecamHotkey: facecamHotkey.value.trim(),
+      facecamFps: Math.min(15, Math.max(2, Number(facecamFps.value) || 8)),
+      facecamWidth: Math.min(520, Math.max(120, Number(facecamWidth.value) || 260)),
+      facecamPositionX: +facecamPlacement.x.toFixed(1),
+      facecamPositionY: +facecamPlacement.y.toFixed(1),
+    }).then(() => {
+      syncFacecamEnabledState();
+      setFacecamStatus(facecamEnabled.checked ? 'Facecam mode enabled' : 'Facecam mode disabled', facecamEnabled.checked ? 'ok' : '');
+    });
+  }, 150);
+}
+
+function renderFacecamPlacement() {
+  facecamPlacementBox.style.left = `calc(${facecamPlacement.x}% - ${facecamPlacement.x * 0.82}px)`;
+  facecamPlacementBox.style.top = `calc(${facecamPlacement.y}% - ${facecamPlacement.y * 0.62}px)`;
+  facecamPosX.textContent = facecamPlacement.x.toFixed(1);
+  facecamPosY.textContent = facecamPlacement.y.toFixed(1);
+}
+
+function startFacecamPlacementDrag(event) {
+  event.preventDefault();
+  facecamPlacementBox.setPointerCapture(event.pointerId);
+  const move = (moveEvent) => {
+    const pad = facecamPlacementPad.getBoundingClientRect();
+    const box = facecamPlacementBox.getBoundingClientRect();
+    const maxX = Math.max(1, pad.width - box.width);
+    const maxY = Math.max(1, pad.height - box.height);
+    const x = Math.min(maxX, Math.max(0, moveEvent.clientX - pad.left - box.width / 2));
+    const y = Math.min(maxY, Math.max(0, moveEvent.clientY - pad.top - box.height / 2));
+    facecamPlacement.x = (x / maxX) * 100;
+    facecamPlacement.y = (y / maxY) * 100;
+    renderFacecamPlacement();
+  };
+  const up = () => {
+    facecamPlacementBox.removeEventListener('pointermove', move);
+    saveFacecamSettings();
+  };
+  facecamPlacementBox.addEventListener('pointermove', move);
+  facecamPlacementBox.addEventListener('pointerup', up, { once: true });
+  facecamPlacementBox.addEventListener('pointercancel', up, { once: true });
+  move(event);
+}
+
+function syncFacecamEnabledState() {
+  facecamBtn.disabled = !facecamEnabled.checked;
+  $('facecam-panel').classList.toggle('facecam-off', !facecamEnabled.checked);
+}
+
+async function startFacecamHold(event) {
+  if (!facecamEnabled.checked || facecamHolding) return;
+  event.preventDefault();
+  facecamHolding = true;
+  try { facecamBtn.setPointerCapture(event.pointerId); } catch {}
+  facecamBtn.classList.add('holding');
+  saveFacecamSettings();
+  setFacecamStatus('Starting camera...');
+  try {
+    await window.sender.previewFacecamStart();
+  } catch (error) {
+    setFacecamStatus(`Could not start camera: ${error.message}`, 'err');
+  }
+}
+
+async function stopFacecamHold(event) {
+  if (!facecamHolding) return;
+  event.preventDefault();
+  facecamHolding = false;
+  facecamBtn.classList.remove('holding');
+  try { facecamBtn.releasePointerCapture(event.pointerId); } catch {}
+  try {
+    await window.sender.previewFacecamStop();
+    setFacecamStatus('Facecam stopped', 'ok');
+  } catch (error) {
+    setFacecamStatus(`Could not stop camera: ${error.message}`, 'err');
+  }
+}
+
+function setFacecamStatus(message, type = '') {
+  facecamStatus.textContent = message;
+  facecamStatus.className = type;
 }
 
 document.querySelectorAll('.anchor-btn').forEach((button) => button.addEventListener('click', () => setAnchor(button.dataset.anchor, true)));

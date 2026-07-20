@@ -50,6 +50,24 @@ io.on('connection', (socket) => {
   });
 });
 
+io.on('connection', (socket) => {
+  function relayFacecam(eventName, payload) {
+    const event = { ...(payload || {}), from: socket.discordUsername || null };
+    io.sockets.sockets.forEach(client => {
+      if (client.id === socket.id || !client.discordUsername) return;
+      if (event.target && client.discordUsername !== event.target) return;
+      client.emit(eventName, event);
+    });
+  }
+
+  socket.on('facecam-start', payload => relayFacecam('facecam-start', payload));
+  socket.on('facecam-frame', payload => {
+    if (!payload?.image || String(payload.image).length > 450000) return;
+    relayFacecam('facecam-frame', payload);
+  });
+  socket.on('facecam-stop', payload => relayFacecam('facecam-stop', payload));
+});
+
 // Exposer le router au bot
 app.locals.router = router;
 

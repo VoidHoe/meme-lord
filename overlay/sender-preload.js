@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('sender', {
   saveSettings:   (settings)         => ipcRenderer.invoke('save-settings', settings),
   sendDrop:       (payload)          => ipcRenderer.invoke('send-drop', payload),
   previewDrop:    (payload)          => ipcRenderer.invoke('preview-drop', payload),
+  previewFacecamStart: ()            => ipcRenderer.invoke('preview-facecam-start'),
+  previewFacecamStop: ()             => ipcRenderer.invoke('preview-facecam-stop'),
   chooseChaseAudio: ()               => ipcRenderer.invoke('choose-chase-audio'),
   chooseChaseSfxFolder: ()           => ipcRenderer.invoke('choose-chase-sfx-folder'),
   resolveLink:    (url)              => ipcRenderer.invoke('resolve-link', url),
@@ -30,4 +32,5 @@ contextBridge.exposeInMainWorld('sender', {
   onUpdateStatus: (cb)               => ipcRenderer.on('update-status', (_e, msg) => cb(msg)),
   onShowTab:      (cb)               => ipcRenderer.on('show-tab',      (_e, tab) => cb(tab)),
   onSnipResult:   (cb)               => ipcRenderer.on('snip-result',   (_e, d)   => cb(d)),
+  onFacecamStatus:(cb)               => ipcRenderer.on('facecam-status',(_e, d)   => cb(d)),
 });

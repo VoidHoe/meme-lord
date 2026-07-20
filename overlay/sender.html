@@ -22,6 +22,7 @@
           <button class="tab" data-tab="library"><span>▣</span>Library</button>
           <button class="tab" data-tab="history"><span>↶</span>History</button>
           <button class="tab" data-tab="chase"><span>⏱</span>Chase</button>
+          <button class="tab" data-tab="facecam"><span>▥</span>Facecam</button>
           <button class="tab settings-tab" data-tab="settings"><span>⚙</span>Settings</button>
         </nav>
         <div class="sidebar-note">Fast jokes.<br>Perfect timing.</div>
@@ -125,6 +126,10 @@
               <h2>Activation</h2>
               <label class="toggle"><input type="checkbox" id="chase-enabled"> Enable chase mode <small>Registers the global hotkey while MemeDrop is running</small></label>
               <label>Hotkey<input id="chase-hotkey" class="field" type="text" value="6" /></label>
+              <div class="mode-toggle" role="group" aria-label="Chase trigger mode">
+                <button type="button" class="mode-chip active" data-chase-mode="hold">Hold</button>
+                <button type="button" class="mode-chip" data-chase-mode="toggle">Toggle</button>
+              </div>
               <button id="chase-btn" class="primary-btn" type="button">Hold chase</button>
               <div id="chase-status"></div>
             </section>
@@ -140,6 +145,32 @@
               <label>SFX every<input id="chase-checkpoint" class="field" type="number" min="5" max="180" step="5" value="30" /></label>
               <button id="chase-sfx-import" class="ghost-btn" type="button">Import SFX folder</button>
               <div id="chase-sfx-status">No SFX folder</div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel page-panel facecam-page" id="facecam-panel">
+          <div class="page-head"><div><h1>Facecam</h1><p>Hold a hotkey to pop your webcam onto everyone else's overlay.</p></div></div>
+          <div class="chase-settings">
+            <section class="settings-card">
+              <h2>Activation</h2>
+              <label class="toggle"><input type="checkbox" id="facecam-enabled"> Enable facecam mode <small>Registers the global facecam hotkey while MemeDrop is running</small></label>
+              <label>Hotkey<input id="facecam-hotkey" class="field" type="text" value="5" /></label>
+              <button id="facecam-btn" class="primary-btn" type="button">Hold facecam</button>
+              <div id="facecam-status"></div>
+            </section>
+            <section class="settings-card">
+              <h2>Stream</h2>
+              <label>Frames per second<input id="facecam-fps" class="field" type="number" min="2" max="15" step="1" value="8" /></label>
+              <label>Width<input id="facecam-width" class="field" type="number" min="120" max="520" step="10" value="260" /></label>
+              <p class="setting-note">Uses your default webcam at low quality so it stays light on the server.</p>
+            </section>
+            <section class="settings-card facecam-placement-card">
+              <h2>Placement</h2>
+              <div id="facecam-placement-pad">
+                <div id="facecam-placement-box">CAM</div>
+              </div>
+              <div class="placement-readout">X <span id="facecam-pos-x">78</span>% · Y <span id="facecam-pos-y">8</span>%</div>
             </section>
           </div>
         </section>
