@@ -580,6 +580,7 @@ async function uploadChaseAudioUrl(url) {
     headers: {
       'Content-Type': AUDIO_MIME[ext] || 'audio/mpeg',
       'X-File-Name': path.basename(filePath),
+      'X-MemeDrop-Persistent': 'chase',
     },
     body: fs.readFileSync(filePath),
   });
@@ -597,7 +598,7 @@ async function refreshPreparedTrack(track) {
   if (!track?.sourcePath || !fs.existsSync(track.sourcePath)) return track;
   const stat = fs.statSync(track.sourcePath);
   const uploadedAt = Number(track.uploadedAt) || 0;
-  if (track.url && track.size === stat.size && track.mtimeMs === stat.mtimeMs && Date.now() - uploadedAt < 5 * 60 * 60 * 1000) {
+  if (track.url && track.size === stat.size && track.mtimeMs === stat.mtimeMs && Date.now() - uploadedAt < 30 * 24 * 60 * 60 * 1000) {
     return track;
   }
   const url = await uploadChaseAudioPath(track.sourcePath);
@@ -622,7 +623,7 @@ async function prepareSfxLibrary(sfx) {
     if (item.sourcePath && fs.existsSync(item.sourcePath)) {
       const stat = fs.statSync(item.sourcePath);
       const uploadedAt = Number(item.uploadedAt) || 0;
-      if (!item.url || item.size !== stat.size || item.mtimeMs !== stat.mtimeMs || Date.now() - uploadedAt >= 5 * 60 * 60 * 1000) {
+      if (!item.url || item.size !== stat.size || item.mtimeMs !== stat.mtimeMs || Date.now() - uploadedAt >= 30 * 24 * 60 * 60 * 1000) {
         item.url = await uploadChaseAudioPath(item.sourcePath);
         item.size = stat.size;
         item.mtimeMs = stat.mtimeMs;

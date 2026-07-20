@@ -12,9 +12,13 @@ const app = express();
 app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
+const persistentRoot = process.env.PERSISTENT_DATA_DIR || '/data';
+const tempAudioDir = path.join(__dirname, 'audio_cache');
+const persistentAudioDir = path.join(persistentRoot, 'audio_cache');
 
 // Servir les fichiers audio et media proxiés
-app.use('/audio', express.static(path.join(__dirname, 'audio_cache')));
+app.use('/audio', express.static(tempAudioDir));
+app.use('/audio', express.static(persistentAudioDir));
 app.use('/media', express.static(path.join(__dirname, 'media_cache')));
 
 // Page mobile "Quick Drop" (envoyer depuis le téléphone)
@@ -32,7 +36,7 @@ function purgeStaleCache(dir) {
     } catch {}
   });
 }
-purgeStaleCache(path.join(__dirname, 'audio_cache'));
+purgeStaleCache(tempAudioDir);
 purgeStaleCache(path.join(__dirname, 'media_cache'));
 
 const router = createRouter(io);
@@ -168,12 +172,15 @@ app.post('/api/upload-audio', express.raw({ type: 'audio/*', limit: '50mb' }), (
       : mime.includes('wav') ? 'wav'
       : mime.includes('mp4') ? 'm4a'
       : 'mp3';
+    const persistent = req.get('X-MemeDrop-Persistent') === 'chase';
     const filename = `drop-${Date.now()}.${ext}`;
-    const audioDir = path.join(__dirname, 'audio_cache');
+    const audioDir = persistent ? persistentAudioDir : tempAudioDir;
     fs.mkdirSync(audioDir, { recursive: true });
     const filepath = path.join(audioDir, filename);
     fs.writeFileSync(filepath, req.body);
-    setTimeout(() => { try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch {} }, 6 * 60 * 60 * 1000);
+    if (!persistent) {
+      setTimeout(() => { try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch {} }, 5 * 60 * 1000);
+    }
     const publicUrl = process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`;
     console.log(`[api] audio uploadé: ${filename}`);
     res.json({ url: `${publicUrl}/audio/${filename}` });
