@@ -29,6 +29,13 @@ const ANCHOR_MAP = {
 };
 
 const $ = (id) => document.getElementById(id);
+const appRoot = $('app');
+const authGateServer = $('auth-gate-server');
+const authGateUsername = $('auth-gate-username');
+const authGatePassword = $('auth-gate-password');
+const authGateStatus = $('auth-gate-status');
+const authGateLogin = $('auth-gate-login');
+const authGateRegister = $('auth-gate-register');
 const composePanel = $('compose-panel');
 const dropZone = $('drop-zone');
 const stageMedia = $('stage-media');
@@ -73,6 +80,11 @@ const chaseHotkey = $('chase-hotkey');
 const chaseMusicMode = $('chase-music-mode');
 const chaseMusicSelect = $('chase-music-select');
 const chaseMusicPicker = $('chase-music-picker');
+const chaseMusicCollapse = $('chase-music-collapse');
+const chasePlaylistFilter = $('chase-playlist-filter');
+const chasePlaylistName = $('chase-playlist-name');
+const chasePlaylistCreate = $('chase-playlist-create');
+const chasePlaylistDelete = $('chase-playlist-delete');
 const chaseMusic = $('chase-music');
 const chaseMusicStart = $('chase-music-start');
 const chaseImport = $('chase-import');
@@ -81,6 +93,13 @@ const chaseCheckpoint = $('chase-checkpoint');
 const chaseSfxImport = $('chase-sfx-import');
 const chaseSfxStatus = $('chase-sfx-status');
 const chaseStatus = $('chase-status');
+const chaseSessionCreate = $('chase-session-create');
+const chaseSessionCode = $('chase-session-code');
+const chaseSessionJoin = $('chase-session-join');
+const chaseSessionLeave = $('chase-session-leave');
+const chaseSessionBadge = $('chase-session-badge');
+const chaseSessionList = $('chase-session-list');
+const chaseLeaderboard = $('chase-leaderboard');
 const facecamEnabled = $('facecam-enabled');
 const facecamHotkey = $('facecam-hotkey');
 const facecamModeBtns = [...document.querySelectorAll('[data-facecam-mode]')];
@@ -120,11 +139,20 @@ function isPanelActive(name) {
   return !!PANELS[name] && $(PANELS[name]).classList.contains('active');
 }
 
+function setAuthLocked(locked) {
+  appRoot.classList.toggle('auth-locked', !!locked);
+  if (locked) {
+    authGateUsername.focus();
+  }
+}
+
 document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => showTab(tab.dataset.tab)));
 if (window.sender.onShowTab) window.sender.onShowTab((tab) => showTab(tab));
 
 $('close-btn').addEventListener('click', () => window.sender.close());
 $('min-btn').addEventListener('click', () => window.sender.minimize());
+$('auth-close-btn').addEventListener('click', () => window.sender.close());
+$('auth-min-btn').addEventListener('click', () => window.sender.minimize());
 $('snip-btn').addEventListener('click', async () => {
   setStatus('Opening screen snip…');
   try { await window.sender.openSnipTool(); } catch (error) { setStatus(error.message, 'err'); }
@@ -145,8 +173,11 @@ if (window.sender.onSnipResult) {
 window.sender.getSettings().then((settings) => {
   setAnchor(settings.anchorPosition || 'center', false);
   setSize(settings.dropSize || 'm', false);
+  authGateServer.value = settings.serverUrl || '';
+  authGateUsername.value = settings.authUser?.username || settings.discordUsername || '';
   loadChaseSettings(settings);
   loadFacecamSettings(settings);
+  refreshAuthStatus();
 });
 loadUsers();
 
@@ -182,6 +213,11 @@ let chaseTriggerMode = 'hold';
 let chaseToggleId = null;
 let chaseToggleAutoTimer = null;
 let chaseMusicLibrary = [];
+let chaseMusicPlaylists = [];
+let chaseMusicCollapsed = false;
+let chaseActiveSession = null;
+let chaseHoldStartedAt = null;
+let chaseToggleStartedAt = null;
 
 chaseBtn.addEventListener('pointerdown', handleChaseButtonDown);
 chaseBtn.addEventListener('pointerup', stopChaseHold);
@@ -191,6 +227,16 @@ chaseBtn.addEventListener('pointerleave', (event) => {
 });
 chaseImport.addEventListener('click', importChaseAudio);
 chaseSfxImport.addEventListener('click', importChaseSfxFolder);
+chaseMusicCollapse.addEventListener('click', () => {
+  chaseMusicCollapsed = !chaseMusicCollapsed;
+  renderChaseMusicPicker();
+});
+chasePlaylistFilter.addEventListener('change', () => renderChaseMusicLibrary(chaseMusicSelect.value));
+chasePlaylistCreate.addEventListener('click', createChasePlaylist);
+chasePlaylistDelete.addEventListener('click', deleteSelectedChasePlaylist);
+chaseSessionCreate.addEventListener('click', createChaseSession);
+chaseSessionJoin.addEventListener('click', () => joinChaseSession(chaseSessionCode.value));
+chaseSessionLeave.addEventListener('click', leaveChaseSession);
 [chaseEnabled, chaseDuration, chaseHotkey, chaseMusicMode, chaseMusicSelect, chaseMusic, chaseMusicStart, chaseCheckpointEnabled, chaseCheckpoint].forEach((input) => {
   input.addEventListener('change', saveChaseSettings);
   input.addEventListener('blur', saveChaseSettings);
@@ -211,6 +257,7 @@ function loadChaseSettings(settings) {
   const selectedMusic = settings.chaseMusicMode === 'random' ? '__random' : settings.chaseSelectedMusicId || '';
   renderChaseMusicLibrary(selectedMusic);
   refreshChaseAudioLibrary(selectedMusic);
+  loadChaseSession();
   chaseMusic.value = '';
   chaseMusicStart.value = 0;
   chaseCheckpointEnabled.checked = settings.chaseCheckpointSfxEnabled !== false;
@@ -235,6 +282,7 @@ function saveChaseSettings() {
       chaseMusicStart: 0,
       chaseCheckpointSfxEnabled: chaseCheckpointEnabled.checked,
       chaseCheckpointSeconds: chaseCheckpointSeconds(),
+      chaseSessionCode: '',
     }).then(() => {
       syncChaseEnabledState();
       setChaseStatus(chaseEnabled.checked ? 'Chase mode enabled' : 'Chase mode disabled', chaseEnabled.checked ? 'ok' : '');
@@ -245,6 +293,7 @@ function saveChaseSettings() {
 function renderChaseMusicLibrary(selectedId = chaseMusicSelect.value) {
   while (chaseMusicSelect.options.length) chaseMusicSelect.remove(0);
   chaseMusicPicker.innerHTML = '';
+  renderChasePlaylistControls();
   if (!chaseMusicLibrary.length) {
     const option = document.createElement('option');
     option.value = '';
@@ -275,14 +324,53 @@ function renderChaseMusicLibrary(selectedId = chaseMusicSelect.value) {
   renderChaseMusicPicker();
 }
 
+function renderChasePlaylistControls() {
+  const selected = chasePlaylistFilter.value || '';
+  while (chasePlaylistFilter.options.length) chasePlaylistFilter.remove(0);
+  const allOption = document.createElement('option');
+  allOption.value = '';
+  allOption.textContent = 'All songs';
+  chasePlaylistFilter.appendChild(allOption);
+  chaseMusicPlaylists.forEach((playlist) => {
+    const option = document.createElement('option');
+    option.value = playlist.id;
+    option.textContent = playlist.name;
+    chasePlaylistFilter.appendChild(option);
+  });
+  chasePlaylistFilter.value = chaseMusicPlaylists.some(playlist => playlist.id === selected) ? selected : '';
+  chasePlaylistDelete.disabled = !chasePlaylistFilter.value;
+}
+
+function playlistForTrack(trackId) {
+  return chaseMusicPlaylists.find(playlist => (playlist.trackIds || []).includes(trackId)) || null;
+}
+
+function visibleChaseTracks() {
+  const playlistId = chasePlaylistFilter.value || '';
+  if (!playlistId) return chaseMusicLibrary;
+  const playlist = chaseMusicPlaylists.find(item => item.id === playlistId);
+  const ids = new Set(playlist?.trackIds || []);
+  return chaseMusicLibrary.filter(track => ids.has(track.id));
+}
+
 function renderChaseMusicPicker() {
   chaseMusicPicker.innerHTML = '';
+  chaseMusicCollapse.textContent = chaseMusicCollapsed ? 'Expand songs' : 'Collapse songs';
+  chaseMusicPicker.classList.toggle('collapsed', chaseMusicCollapsed);
+  if (chaseMusicCollapsed) {
+    const collapsed = document.createElement('div');
+    collapsed.className = 'music-picker-empty';
+    collapsed.textContent = `${visibleChaseTracks().length} song${visibleChaseTracks().length === 1 ? '' : 's'} hidden`;
+    chaseMusicPicker.appendChild(collapsed);
+    return;
+  }
+  const visibleTracks = visibleChaseTracks();
   const rows = [
-    { id: '__random', name: 'Random song', meta: `${chaseMusicLibrary.length} song${chaseMusicLibrary.length === 1 ? '' : 's'}`, removable: false },
-    ...chaseMusicLibrary.map(track => ({
+    { id: '__random', name: 'Random song', meta: `${visibleTracks.length} visible song${visibleTracks.length === 1 ? '' : 's'}`, removable: false },
+    ...visibleTracks.map(track => ({
       id: track.id,
       name: track.name || 'Imported track',
-      meta: track.uploadedAt ? new Date(track.uploadedAt).toLocaleDateString() : 'Server song',
+      meta: playlistForTrack(track.id)?.name || (track.uploadedAt ? new Date(track.uploadedAt).toLocaleDateString() : 'No playlist'),
       removable: true,
       track,
     })),
@@ -308,6 +396,25 @@ function renderChaseMusicPicker() {
       saveChaseSettings();
     });
     if (row.removable) {
+      const playlist = document.createElement('select');
+      playlist.className = 'music-picker-playlist';
+      const none = document.createElement('option');
+      none.value = '';
+      none.textContent = 'No playlist';
+      playlist.appendChild(none);
+      chaseMusicPlaylists.forEach((item) => {
+        const option = document.createElement('option');
+        option.value = item.id;
+        option.textContent = item.name;
+        playlist.appendChild(option);
+      });
+      playlist.value = playlistForTrack(row.track.id)?.id || '';
+      playlist.addEventListener('click', (event) => event.stopPropagation());
+      playlist.addEventListener('change', (event) => {
+        event.stopPropagation();
+        moveChaseMusicToPlaylist(row.track, playlist.value);
+      });
+      item.appendChild(playlist);
       const remove = document.createElement('span');
       remove.className = 'music-picker-remove';
       remove.textContent = 'Remove';
@@ -332,6 +439,7 @@ async function deleteChaseMusic(track) {
     if (!result.ok) throw new Error(result.error || 'Server error');
     const nextLibrary = Array.isArray(result.library?.music) ? result.library.music : [];
     chaseMusicLibrary = nextLibrary;
+    chaseMusicPlaylists = Array.isArray(result.library?.playlists) ? result.library.playlists : [];
     const nextSelected = chaseMusicSelect.value === track.id
       ? nextLibrary[0]?.id || ''
       : chaseMusicSelect.value;
@@ -343,12 +451,64 @@ async function deleteChaseMusic(track) {
   }
 }
 
+async function createChasePlaylist() {
+  const name = chasePlaylistName.value.trim();
+  if (!name) return;
+  setChaseStatus(`Creating playlist ${name}...`);
+  try {
+    const result = await window.sender.createChasePlaylist(name);
+    if (!result.ok) throw new Error(result.error || 'Server error');
+    chaseMusicLibrary = Array.isArray(result.library?.music) ? result.library.music : [];
+    chaseMusicPlaylists = Array.isArray(result.library?.playlists) ? result.library.playlists : [];
+    chasePlaylistFilter.value = result.playlist?.id || '';
+    chasePlaylistName.value = '';
+    renderChaseMusicLibrary(chaseMusicSelect.value);
+    setChaseStatus(`Playlist ${result.playlist?.name || name} created`, 'ok');
+  } catch (error) {
+    setChaseStatus(`Could not create playlist: ${error.message}`, 'err');
+  }
+}
+
+async function deleteSelectedChasePlaylist() {
+  const playlistId = chasePlaylistFilter.value;
+  const playlist = chaseMusicPlaylists.find(item => item.id === playlistId);
+  if (!playlist) return;
+  if (!confirm(`Delete playlist "${playlist.name}"? Songs will stay in the library.`)) return;
+  setChaseStatus(`Deleting ${playlist.name}...`);
+  try {
+    const result = await window.sender.deleteChasePlaylist(playlist.id);
+    if (!result.ok) throw new Error(result.error || 'Server error');
+    chaseMusicLibrary = Array.isArray(result.library?.music) ? result.library.music : [];
+    chaseMusicPlaylists = Array.isArray(result.library?.playlists) ? result.library.playlists : [];
+    chasePlaylistFilter.value = '';
+    renderChaseMusicLibrary(chaseMusicSelect.value);
+    setChaseStatus(`Playlist ${playlist.name} deleted`, 'ok');
+  } catch (error) {
+    setChaseStatus(`Could not delete playlist: ${error.message}`, 'err');
+  }
+}
+
+async function moveChaseMusicToPlaylist(track, playlistId) {
+  if (!track?.id) return;
+  try {
+    const result = await window.sender.moveChaseMusicToPlaylist(track.id, playlistId);
+    if (!result.ok) throw new Error(result.error || 'Server error');
+    chaseMusicLibrary = Array.isArray(result.library?.music) ? result.library.music : [];
+    chaseMusicPlaylists = Array.isArray(result.library?.playlists) ? result.library.playlists : [];
+    renderChaseMusicLibrary(chaseMusicSelect.value);
+    setChaseStatus(playlistId ? 'Song moved to playlist' : 'Song removed from playlist', 'ok');
+  } catch (error) {
+    setChaseStatus(`Could not move song: ${error.message}`, 'err');
+  }
+}
+
 async function refreshChaseAudioLibrary(selectedId = chaseMusicSelect.value) {
   if (!window.sender.getChaseAudioLibrary) return;
   try {
     const library = await window.sender.getChaseAudioLibrary();
     if (library.error) throw new Error(library.error);
     chaseMusicLibrary = Array.isArray(library.music) ? library.music : [];
+    chaseMusicPlaylists = Array.isArray(library.playlists) ? library.playlists : [];
     renderChaseMusicLibrary(selectedId);
     const sfx = library.sfx || {};
     const sfxCount = (sfx.checkpoints?.length || 0) + (sfx.start ? 1 : 0) + (sfx.end ? 1 : 0);
@@ -356,6 +516,100 @@ async function refreshChaseAudioLibrary(selectedId = chaseMusicSelect.value) {
   } catch (error) {
     setChaseStatus(`Could not refresh server audio: ${error.message}`, 'err');
   }
+}
+
+async function loadChaseSession(code = chaseActiveSession?.code || '') {
+  renderChaseSessionList([]);
+  const result = await window.sender.getChaseSession('');
+  renderChaseSession(result.session || null);
+}
+
+async function refreshChaseSessions() {
+  if (!window.sender.listChaseSessions) return;
+  const result = await window.sender.listChaseSessions();
+  renderChaseSessionList(result.sessions || []);
+}
+
+function renderChaseSession(session) {
+  chaseActiveSession = session || null;
+  chaseSessionBadge.textContent = 'Global';
+  chaseSessionCode.value = '';
+  chaseSessionLeave.disabled = !session;
+  const players = session?.players || [];
+  chaseLeaderboard.innerHTML = '';
+  if (!session) {
+    chaseLeaderboard.innerHTML = '<div class="leaderboard-empty">No leaderboard loaded yet.</div>';
+    return;
+  }
+  if (!players.length) {
+    chaseLeaderboard.innerHTML = '<div class="leaderboard-empty">No scores yet.</div>';
+    return;
+  }
+  players.forEach((player, index) => {
+    const row = document.createElement('div');
+    row.className = 'leaderboard-row';
+    row.innerHTML = `<span class="leaderboard-rank"></span><span class="leaderboard-name"></span><strong></strong><small></small>`;
+    row.querySelector('.leaderboard-rank').textContent = `#${index + 1}`;
+    row.querySelector('.leaderboard-name').textContent = player.name || 'Player';
+    row.querySelector('strong').textContent = player.bestMs ? formatChaseMs(player.bestMs) : '--:--.--';
+    row.querySelector('small').textContent = `${player.runs || 0} run${player.runs === 1 ? '' : 's'}`;
+    chaseLeaderboard.appendChild(row);
+  });
+}
+
+function renderChaseSessionList(sessions) {
+  chaseSessionList.innerHTML = '<div class="session-empty">Every 30s+ chase is recorded automatically.</div>';
+}
+
+async function createChaseSession() {
+  setChaseStatus('Creating chase session...');
+  const result = await window.sender.createChaseSession();
+  if (!result.ok) {
+    setChaseStatus(`Could not create session: ${result.error}`, 'err');
+    return;
+  }
+  renderChaseSession(result.session);
+  await refreshChaseSessions();
+  saveChaseSettings();
+  setChaseStatus(`Session ${result.session.code} created`, 'ok');
+}
+
+async function joinChaseSession(code) {
+  const cleanCode = String(code || '').trim().toUpperCase();
+  if (!cleanCode) return;
+  setChaseStatus(`Joining ${cleanCode}...`);
+  const result = await window.sender.joinChaseSession(cleanCode);
+  if (!result.ok) {
+    setChaseStatus(`Could not join session: ${result.error}`, 'err');
+    return;
+  }
+  renderChaseSession(result.session);
+  await refreshChaseSessions();
+  saveChaseSettings();
+  setChaseStatus(`Joined ${result.session.code}`, 'ok');
+}
+
+async function leaveChaseSession() {
+  await window.sender.leaveChaseSession();
+  renderChaseSession(null);
+  await refreshChaseSessions();
+  saveChaseSettings();
+  setChaseStatus('Left chase session', 'ok');
+}
+
+async function submitChaseScore(durationMs) {
+  const result = await window.sender.submitChaseSessionScore(durationMs);
+  if (result.leaderboard) renderChaseSession({ code: 'GLOBAL', players: result.leaderboard.players || [] });
+  if (result.counted) setChaseStatus(`Leaderboard updated: ${formatChaseMs(durationMs)}`, 'ok');
+  else if (durationMs < 30000) setChaseStatus('Chase stopped. Leaderboard starts at 30s.', 'ok');
+}
+
+function formatChaseMs(ms) {
+  const centiseconds = Math.max(0, Math.floor(Number(ms) / 10));
+  const minutes = Math.floor(centiseconds / 6000);
+  const seconds = Math.floor((centiseconds % 6000) / 100);
+  const centis = centiseconds % 100;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(centis).padStart(2, '0')}`;
 }
 
 function syncChaseEnabledState() {
@@ -463,6 +717,7 @@ async function startChaseHold(event) {
   if (chaseHoldId) return;
   event.preventDefault();
   chaseHoldId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  chaseHoldStartedAt = Date.now();
   try { chaseBtn.setPointerCapture(event.pointerId); } catch {}
   chaseBtn.classList.add('holding');
   setChaseStatus('Holding chase timer...');
@@ -478,6 +733,7 @@ async function startChaseHold(event) {
       caption: 'Held chase timer',
     });
   } catch (error) {
+    chaseHoldStartedAt = null;
     setChaseStatus(`Could not start timer: ${error.message}`, 'err');
   }
 }
@@ -487,12 +743,15 @@ async function stopChaseHold(event) {
   if (!chaseHoldId) return;
   event.preventDefault();
   const id = chaseHoldId;
+  const startedAt = chaseHoldStartedAt;
   chaseHoldId = null;
+  chaseHoldStartedAt = null;
   chaseBtn.classList.remove('holding');
   try { chaseBtn.releasePointerCapture(event.pointerId); } catch {}
   try {
     await sendChaseAction(chasePayload('stop', id));
     setChaseStatus('Chase stopped', 'ok');
+    if (startedAt) await submitChaseScore(Date.now() - startedAt);
   } catch (error) {
     setChaseStatus(`Could not stop timer: ${error.message}`, 'err');
   }
@@ -511,7 +770,9 @@ async function toggleChase(event) {
   event.preventDefault();
   if (chaseToggleId) {
     const id = chaseToggleId;
+    const startedAt = chaseToggleStartedAt;
     chaseToggleId = null;
+    chaseToggleStartedAt = null;
     if (chaseToggleAutoTimer) clearTimeout(chaseToggleAutoTimer);
     chaseToggleAutoTimer = null;
     chaseBtn.classList.remove('holding');
@@ -519,12 +780,14 @@ async function toggleChase(event) {
     try {
       await sendChaseAction(chasePayload('stop', id));
       setChaseStatus('Chase stopped', 'ok');
+      if (startedAt) await submitChaseScore(Date.now() - startedAt);
     } catch (error) {
       setChaseStatus(`Could not stop timer: ${error.message}`, 'err');
     }
     return;
   }
   chaseToggleId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  chaseToggleStartedAt = Date.now();
   chaseBtn.classList.add('holding');
   syncChaseEnabledState();
   setChaseStatus('Chase toggled on...');
@@ -536,10 +799,13 @@ async function toggleChase(event) {
     if (chaseToggleAutoTimer) clearTimeout(chaseToggleAutoTimer);
     chaseToggleAutoTimer = setTimeout(() => {
       if (chaseToggleId === payload.action.id) {
+        const startedAt = chaseToggleStartedAt;
         chaseToggleId = null;
+        chaseToggleStartedAt = null;
         chaseToggleAutoTimer = null;
         chaseBtn.classList.remove('holding');
         syncChaseEnabledState();
+        if (startedAt) submitChaseScore(Date.now() - startedAt);
         setChaseStatus('Chase completed', 'ok');
       }
     }, chaseSeconds() * 1000 + 1000);
@@ -551,6 +817,7 @@ async function toggleChase(event) {
     });
   } catch (error) {
     chaseToggleId = null;
+    chaseToggleStartedAt = null;
     if (chaseToggleAutoTimer) clearTimeout(chaseToggleAutoTimer);
     chaseToggleAutoTimer = null;
     chaseBtn.classList.remove('holding');
@@ -1285,10 +1552,106 @@ libraryPanel.addEventListener('drop', async (event) => {
 
 const SET_RANGES = [['duration', 'durationVal'], ['masterVolume', 'masterVolumeVal'], ['volumeSfx', 'volumeSfxVal'], ['volumeVoice', 'volumeVoiceVal']];
 SET_RANGES.forEach(([inputId, outputId]) => $(inputId).addEventListener('input', () => { $(outputId).textContent = $(inputId).value; }));
+async function refreshAuthStatus() {
+  try {
+    const status = await window.sender.authStatus();
+    renderAuthStatus(status.user || null, status.ok);
+    setAuthLocked(!status.ok);
+    return !!status.ok;
+  } catch (error) {
+    renderAuthStatus(null, false);
+    setAuthLocked(true);
+    authGateStatus.textContent = error.message || 'Could not check account';
+    authGateStatus.className = 'auth-gate-status err';
+    return false;
+  }
+}
+
+function renderAuthStatus(user, ok = !!user) {
+  const label = user ? `${user.username}${user.role === 'admin' ? ' (admin)' : ''}` : 'Not logged in';
+  $('auth-current').textContent = ok && user ? `Logged in as ${label}` : label;
+  $('auth-current').classList.toggle('ok', !!(ok && user));
+  $('auth-username').value = user?.username || $('auth-username').value || $('discordUsername').value || '';
+  authGateUsername.value = user?.username || authGateUsername.value || $('discordUsername').value || '';
+  $('auth-logout-btn').disabled = !user;
+  if (ok && user) {
+    authGatePassword.value = '';
+    authGateStatus.textContent = `Logged in as ${label}`;
+    authGateStatus.className = 'auth-gate-status ok';
+  }
+}
+
+async function handleAuth(mode) {
+  const username = $('auth-username').value.trim();
+  const password = $('auth-password').value;
+  if (!username || !password) {
+    $('settings-status').textContent = 'Username and password required';
+    return;
+  }
+  let result;
+  try {
+    result = mode === 'register'
+      ? await window.sender.authRegister(username, password)
+      : await window.sender.authLogin(username, password);
+  } catch (error) {
+    result = { ok: false, error: error.message };
+  }
+  if (!result.ok) {
+    $('settings-status').textContent = result.error || 'Auth failed';
+    renderAuthStatus(null, false);
+    return;
+  }
+  $('auth-password').value = '';
+  $('discordUsername').value = result.user?.username || username;
+  renderAuthStatus(result.user, true);
+  setAuthLocked(false);
+  $('settings-status').textContent = mode === 'register' ? 'Account created' : 'Logged in';
+  loadUsers();
+}
+
+async function handleGateAuth(mode) {
+  const serverUrl = authGateServer.value.trim();
+  const username = authGateUsername.value.trim();
+  const password = authGatePassword.value;
+  authGateStatus.className = 'auth-gate-status';
+  if (!username || !password) {
+    authGateStatus.textContent = 'Username and password required';
+    authGateStatus.classList.add('err');
+    return;
+  }
+  authGateLogin.disabled = true;
+  authGateRegister.disabled = true;
+  authGateStatus.textContent = mode === 'register' ? 'Creating account...' : 'Logging in...';
+  try {
+    if (serverUrl) await window.sender.saveSettings({ serverUrl });
+    const result = mode === 'register'
+      ? await window.sender.authRegister(username, password)
+      : await window.sender.authLogin(username, password);
+    if (!result.ok) throw new Error(result.error || 'Auth failed');
+    authGatePassword.value = '';
+    $('discordUsername').value = result.user?.username || username;
+    $('auth-username').value = result.user?.username || username;
+    renderAuthStatus(result.user, true);
+    setAuthLocked(false);
+    showTab('compose');
+    loadUsers();
+  } catch (error) {
+    renderAuthStatus(null, false);
+    setAuthLocked(true);
+    authGateStatus.textContent = error.message || 'Auth failed';
+    authGateStatus.className = 'auth-gate-status err';
+  } finally {
+    authGateLogin.disabled = false;
+    authGateRegister.disabled = false;
+  }
+}
+
 async function loadSettingsForm() {
   const settings = await window.sender.getSettings();
   $('serverUrl').value = settings.serverUrl || '';
+  authGateServer.value = settings.serverUrl || '';
   $('discordUsername').value = settings.discordUsername || '';
+  authGateUsername.value = $('auth-username').value || settings.discordUsername || authGateUsername.value || '';
   $('duration').value = Math.round((settings.duration || 5000) / 1000);
   $('masterVolume').value = settings.masterVolume ?? 100;
   $('volumeSfx').value = settings.volumeSfx ?? 80;
@@ -1297,11 +1660,25 @@ async function loadSettingsForm() {
   $('snipHotkey').value = settings.snipHotkey ?? 'CommandOrControl+Shift+S';
   $('ttsVoice').value = ['g-en', 'g-fr', 'sam', 'mike', 'mary'].includes(settings.ttsVoice) ? settings.ttsVoice : '';
   SET_RANGES.forEach(([inputId, outputId]) => { $(outputId).textContent = $(inputId).value; });
+  await refreshAuthStatus();
 }
+$('auth-login-btn').addEventListener('click', () => handleAuth('login'));
+$('auth-register-btn').addEventListener('click', () => handleAuth('register'));
+authGateLogin.addEventListener('click', () => handleGateAuth('login'));
+authGateRegister.addEventListener('click', () => handleGateAuth('register'));
+authGatePassword.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') handleGateAuth('login');
+});
+$('auth-logout-btn').addEventListener('click', async () => {
+  await window.sender.authLogout();
+  renderAuthStatus(null, false);
+  setAuthLocked(true);
+  $('settings-status').textContent = 'Logged out';
+});
 $('settings-save-btn').addEventListener('click', async () => {
   await window.sender.saveSettings({
     serverUrl: $('serverUrl').value.trim(),
-    discordUsername: $('discordUsername').value.trim(),
+    discordUsername: $('auth-current').classList.contains('ok') ? $('auth-username').value.trim() : $('discordUsername').value.trim(),
     duration: Number($('duration').value) * 1000,
     masterVolume: Number($('masterVolume').value),
     volumeSfx: Number($('volumeSfx').value),
@@ -1311,6 +1688,8 @@ $('settings-save-btn').addEventListener('click', async () => {
     ttsVoice: $('ttsVoice').value,
   });
   $('settings-status').textContent = 'Saved';
+  authGateServer.value = $('serverUrl').value.trim();
+  authGateUsername.value = $('auth-username').value.trim() || $('discordUsername').value.trim() || authGateUsername.value;
   setTimeout(() => { $('settings-status').textContent = ''; }, 1800);
   loadUsers();
 });

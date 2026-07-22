@@ -8,7 +8,23 @@
   <link rel="stylesheet" href="sender.css" />
 </head>
 <body>
-  <div id="app">
+  <div id="app" class="auth-locked">
+    <section id="auth-gate" class="auth-gate" aria-label="Account setup">
+      <div class="auth-gate-window-controls"><button id="auth-min-btn" title="Minimize">â€”</button><button id="auth-close-btn" title="Close">Ã—</button></div>
+      <div class="auth-gate-card">
+        <div class="auth-gate-brand"><span class="brand-mark">M</span><span>Meme<span>Drop</span></span></div>
+        <h1>Create account</h1>
+        <p>Log in once to unlock MemeDrop and save chase records under your name.</p>
+        <label>Server URL<input type="url" id="auth-gate-server" class="field" placeholder="https://your-app.railway.app"></label>
+        <label>Username<input type="text" id="auth-gate-username" class="field" placeholder="Your name"></label>
+        <label>Password<input type="password" id="auth-gate-password" class="field" placeholder="Password"></label>
+        <div class="auth-gate-actions">
+          <button id="auth-gate-register" class="primary-btn" type="button">Create account</button>
+          <button id="auth-gate-login" class="ghost-btn" type="button">Login</button>
+        </div>
+        <div id="auth-gate-status" class="auth-gate-status"></div>
+      </div>
+    </section>
     <header id="titlebar">
       <div class="brand"><span class="brand-mark">M</span><span>Meme<span>Drop</span></span></div>
       <div class="connection"><span class="connection-dot"></span><span id="connection-state">Connecting…</span><span class="connection-divider"></span><span id="friend-count">Checking friends</span></div>
@@ -137,6 +153,15 @@
               <h2>Timer & music</h2>
               <label>Max seconds<input id="chase-duration" class="field" type="number" min="5" max="180" step="5" value="60" /></label>
               <label>Music<select id="chase-music-select" class="field"><option value="">No server songs</option></select></label>
+              <div class="music-tools">
+                <button id="chase-music-collapse" class="ghost-btn" type="button">Collapse songs</button>
+                <select id="chase-playlist-filter" class="field"><option value="">All songs</option></select>
+              </div>
+              <div class="music-tools">
+                <input id="chase-playlist-name" class="field" type="text" maxlength="40" placeholder="New playlist" />
+                <button id="chase-playlist-create" class="ghost-btn" type="button">Create</button>
+                <button id="chase-playlist-delete" class="ghost-btn danger" type="button">Delete</button>
+              </div>
               <div id="chase-music-picker" class="music-picker" aria-label="Chase music library"></div>
               <input id="chase-music-mode" type="hidden" value="library" />
               <input id="chase-music" type="hidden" value="" />
@@ -149,6 +174,21 @@
               <label>SFX every<input id="chase-checkpoint" class="field" type="number" min="5" max="180" step="5" value="30" /></label>
               <button id="chase-sfx-import" class="ghost-btn" type="button">Import SFX to server</button>
               <div id="chase-sfx-status">No SFX folder</div>
+            </section>
+            <section class="settings-card chase-leaderboard-card">
+              <div class="leaderboard-head">
+                <h2>Chase leaderboard</h2>
+                <span id="chase-session-badge">Global</span>
+              </div>
+              <div class="session-actions" hidden>
+                <button id="chase-session-create" class="ghost-btn" type="button">Create session</button>
+                <input id="chase-session-code" class="field" type="text" maxlength="6" placeholder="Code" />
+                <button id="chase-session-join" class="ghost-btn" type="button">Join</button>
+                <button id="chase-session-leave" class="ghost-btn danger" type="button">Leave</button>
+              </div>
+              <div id="chase-session-list" class="session-list">Every 30s+ chase is recorded automatically.</div>
+              <div id="chase-leaderboard" class="leaderboard-list"></div>
+              <p class="setting-note">Your best only updates when a new chase is longer than your current record.</p>
             </section>
           </div>
         </section>
@@ -187,6 +227,7 @@
         <section class="panel page-panel settings-page" id="settings-panel">
           <div class="page-head"><div><h1>Settings</h1><p>Connection, receiving experience and shortcuts.</p></div></div>
           <div class="settings-grid">
+            <section class="settings-card"><h2>Account</h2><div id="auth-current" class="auth-current">Not logged in</div><label>Username<input type="text" id="auth-username" class="field" placeholder="Your name"></label><label>Password<input type="password" id="auth-password" class="field" placeholder="Password"></label><div class="auth-actions"><button id="auth-login-btn" class="ghost-btn" type="button">Login</button><button id="auth-register-btn" class="ghost-btn" type="button">Register</button><button id="auth-logout-btn" class="ghost-btn danger" type="button">Logout</button></div></section>
             <section class="settings-card"><h2>Connection</h2><label>Server URL<input type="url" id="serverUrl" class="field" placeholder="https://your-app.railway.app"></label><label>Display name<input type="text" id="discordUsername" class="field" placeholder="Your name"></label></section>
             <section class="settings-card"><h2>Receiving</h2><label>Display duration<div class="range-row"><input type="range" id="duration" min="1" max="10" step="1"><output><span id="durationVal">5</span>s</output></div></label><label>Master volume<div class="range-row"><input type="range" id="masterVolume" min="0" max="100" step="5"><output id="masterVolumeVal">100</output></div></label><label>Media / SFX volume<div class="range-row"><input type="range" id="volumeSfx" min="0" max="100" step="5"><output id="volumeSfxVal">80</output></div></label><label>Voice / TTS volume<div class="range-row"><input type="range" id="volumeVoice" min="0" max="100" step="5"><output id="volumeVoiceVal">100</output></div></label><label class="toggle"><input type="checkbox" id="tryhardMode"> Tryhard mode <small>Keep incoming drops small and top-right</small></label></section>
             <section class="settings-card"><h2>Tools</h2><label>Snip hotkey<select id="snipHotkey" class="field"><option value="CommandOrControl+Shift+S">Ctrl + Shift + S</option><option value="CommandOrControl+Shift+A">Ctrl + Shift + A</option><option value="CommandOrControl+Shift+X">Ctrl + Shift + X</option><option value="Alt+S">Alt + S</option><option value="">Off</option></select></label><label>Caption voice<select id="ttsVoice" class="field"><option value="">Off</option><optgroup label="Natural"><option value="g-en">English</option><option value="g-fr">French</option></optgroup><optgroup label="Meme robot"><option value="sam">Microsoft Sam</option><option value="mike">Mike</option><option value="mary">Mary</option></optgroup></select></label></section>

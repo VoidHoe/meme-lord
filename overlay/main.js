@@ -32,6 +32,8 @@ const store = new Store({
     history: [],
     library: [],
     ttsVoice: '',
+    authToken: '',
+    authUser: null,
     snipHotkey: 'CommandOrControl+Shift+S',
     chaseEnabled: false,
     chaseHotkey: '6',
@@ -46,6 +48,7 @@ const store = new Store({
     chaseSfxPrepared: null,
     chaseCheckpointSfxEnabled: true,
     chaseCheckpointSeconds: 30,
+    chaseSessionCode: '',
     facecamEnabled: false,
     facecamHotkey: '5',
     facecamTriggerMode: 'hold',
@@ -119,6 +122,8 @@ let chaseToggleActive = false;
 let chaseToggleHotkeyLocked = false;
 let chaseToggleHotkeyTimer = null;
 let chaseToggleAutoTimer = null;
+let chaseHotkeyStartedAt = null;
+let chaseToggleStartedAt = null;
 let facecamHotkeyActive = false;
 let facecamHotkeyTimer = null;
 let facecamHotkeyRepeatSeen = false;
@@ -628,6 +633,48 @@ async function fetchChaseAudioLibrary() {
   return data;
 }
 
+async function chaseSessionRequest(pathname, options = {}) {
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  const res = await fetch(`${serverUrl}${pathname}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `session failed: ${res.status}`);
+  return data;
+}
+
+async function authRequest(pathname, options = {}) {
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  const token = store.get('authToken') || '';
+  const res = await fetch(`${serverUrl}${pathname}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `auth failed: ${res.status}`);
+  return data;
+}
+
+async function submitChaseSessionScore(durationMs) {
+  try {
+    return await authRequest('/api/chase-leaderboard/score', {
+      method: 'POST',
+      body: JSON.stringify({ durationMs: Math.max(0, Math.floor(durationMs || 0)) }),
+    });
+  } catch (err) {
+    console.warn('[chase] leaderboard score failed:', err.message);
+    return { error: err.message };
+  }
+}
+
 async function refreshPreparedTrack(track) {
   if (!track?.sourcePath || !fs.existsSync(track.sourcePath)) return track;
   const stat = fs.statSync(track.sourcePath);
@@ -729,6 +776,7 @@ function triggerChaseHotkey() {
   if (!chaseHotkeyActive) {
     chaseHotkeyActive = true;
     chaseHotkeyRepeatSeen = false;
+    chaseHotkeyStartedAt = Date.now();
     sendChase('start');
   } else {
     chaseHotkeyRepeatSeen = true;
@@ -739,6 +787,8 @@ function triggerChaseHotkey() {
     chaseHotkeyActive = false;
     chaseHotkeyRepeatSeen = false;
     chaseHotkeyTimer = null;
+    if (chaseHotkeyStartedAt) submitChaseSessionScore(Date.now() - chaseHotkeyStartedAt);
+    chaseHotkeyStartedAt = null;
     sendChase('stop');
   }, releaseGraceMs);
 }
@@ -754,6 +804,11 @@ function triggerChaseToggleHotkey() {
   }
   chaseToggleHotkeyLocked = true;
   chaseToggleActive = !chaseToggleActive;
+  if (chaseToggleActive) chaseToggleStartedAt = Date.now();
+  else if (chaseToggleStartedAt) {
+    submitChaseSessionScore(Date.now() - chaseToggleStartedAt);
+    chaseToggleStartedAt = null;
+  }
   sendChase(chaseToggleActive ? 'start' : 'stop');
   if (chaseToggleAutoTimer) {
     clearTimeout(chaseToggleAutoTimer);
@@ -762,6 +817,8 @@ function triggerChaseToggleHotkey() {
   if (chaseToggleActive) {
     const durationMs = Math.min(180, Math.max(5, Number(store.get('chaseDuration')) || 60)) * 1000;
     chaseToggleAutoTimer = setTimeout(() => {
+      if (chaseToggleStartedAt) submitChaseSessionScore(Date.now() - chaseToggleStartedAt);
+      chaseToggleStartedAt = null;
       chaseToggleActive = false;
       chaseToggleAutoTimer = null;
     }, durationMs + 1000);
@@ -879,6 +936,8 @@ ipcMain.handle('save-settings', (_event, newSettings) => {
       chaseHotkeyTimer = null;
       chaseToggleHotkeyTimer = null;
       chaseToggleAutoTimer = null;
+      chaseHotkeyStartedAt = null;
+      chaseToggleStartedAt = null;
       sendChase('stop');
     }
     if (newSettings.facecamEnabled === false) {
@@ -1153,6 +1212,41 @@ ipcMain.handle('get-chase-audio-library', async () => {
   }
 });
 
+ipcMain.handle('create-chase-playlist', async (_event, name) => {
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  const res = await fetch(`${serverUrl}/api/chase-audio/playlists`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: body.error || `HTTP ${res.status}` };
+  store.set('chaseMusicLibrary', body.library?.music || []);
+  return { ok: true, library: body.library || { music: [], playlists: [] }, playlist: body.playlist };
+});
+
+ipcMain.handle('delete-chase-playlist', async (_event, id) => {
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  const res = await fetch(`${serverUrl}/api/chase-audio/playlists/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: body.error || `HTTP ${res.status}` };
+  store.set('chaseMusicLibrary', body.library?.music || []);
+  return { ok: true, library: body.library || { music: [], playlists: [] } };
+});
+
+ipcMain.handle('move-chase-music-to-playlist', async (_event, { trackId, playlistId }) => {
+  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
+  const res = await fetch(`${serverUrl}/api/chase-audio/music/${encodeURIComponent(trackId)}/playlist`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playlistId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: body.error || `HTTP ${res.status}` };
+  store.set('chaseMusicLibrary', body.library?.music || []);
+  return { ok: true, library: body.library || { music: [], playlists: [] } };
+});
+
 ipcMain.handle('delete-chase-music', async (_event, id) => {
   const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
   const res = await fetch(`${serverUrl}/api/chase-audio/music/${encodeURIComponent(id)}`, { method: 'DELETE' });
@@ -1163,6 +1257,109 @@ ipcMain.handle('delete-chase-music', async (_event, id) => {
     store.set('chaseSelectedMusicId', body.library?.music?.[0]?.id || '');
   }
   return { ok: true, library: body.library || { music: [] } };
+});
+
+ipcMain.handle('auth-status', async () => {
+  const token = store.get('authToken') || '';
+  const cached = store.get('authUser') || null;
+  if (!token) return { ok: false, user: null };
+  try {
+    const result = await authRequest('/api/auth/me');
+    store.set('authUser', result.user || cached);
+    if (result.user?.username) store.set('discordUsername', result.user.username);
+    return { ok: true, user: result.user || cached };
+  } catch (err) {
+    return { ok: false, user: cached, error: err.message };
+  }
+});
+
+ipcMain.handle('auth-register', async (_event, { username, password }) => {
+  try {
+    const result = await authRequest('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    store.set({ authToken: result.token || '', authUser: result.user || null, discordUsername: result.user?.username || username || '' });
+    return result;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('auth-login', async (_event, { username, password }) => {
+  try {
+    const result = await authRequest('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+    store.set({ authToken: result.token || '', authUser: result.user || null, discordUsername: result.user?.username || username || '' });
+    connectSocket();
+    return result;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('auth-logout', () => {
+  store.set({ authToken: '', authUser: null });
+  return { ok: true };
+});
+
+ipcMain.handle('list-chase-sessions', async () => {
+  try {
+    const result = await chaseSessionRequest('/api/chase-leaderboard');
+    return { sessions: [], leaderboard: result.leaderboard };
+  } catch (err) {
+    return { sessions: [], error: err.message };
+  }
+});
+
+ipcMain.handle('create-chase-session', async () => {
+  try {
+    const player = store.get('discordUsername') || 'me';
+    const result = await chaseSessionRequest('/api/chase-sessions', {
+      method: 'POST',
+      body: JSON.stringify({ player }),
+    });
+    if (result.session?.code) store.set('chaseSessionCode', result.session.code);
+    return result;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('join-chase-session', async (_event, code) => {
+  try {
+    const player = store.get('discordUsername') || 'me';
+    const cleanCode = String(code || '').trim().toUpperCase();
+    const result = await chaseSessionRequest(`/api/chase-sessions/${encodeURIComponent(cleanCode)}/join`, {
+      method: 'POST',
+      body: JSON.stringify({ player }),
+    });
+    if (result.session?.code) store.set('chaseSessionCode', result.session.code);
+    return result;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('leave-chase-session', () => {
+  store.set('chaseSessionCode', '');
+  return { ok: true };
+});
+
+ipcMain.handle('get-chase-session', async (_event, code = store.get('chaseSessionCode')) => {
+  try {
+    const result = await chaseSessionRequest('/api/chase-leaderboard');
+    return { session: { code: 'GLOBAL', players: result.leaderboard?.players || [] }, leaderboard: result.leaderboard };
+  } catch (err) {
+    return { session: null, error: err.message };
+  }
+});
+
+ipcMain.handle('submit-chase-session-score', async (_event, durationMs) => {
+  const result = await submitChaseSessionScore(durationMs);
+  return result || { skipped: true };
 });
 
 ipcMain.on('close-sender', () => {
