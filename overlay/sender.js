@@ -93,10 +93,6 @@ const chaseCheckpoint = $('chase-checkpoint');
 const chaseSfxImport = $('chase-sfx-import');
 const chaseSfxStatus = $('chase-sfx-status');
 const chaseStatus = $('chase-status');
-const chaseSessionCreate = $('chase-session-create');
-const chaseSessionCode = $('chase-session-code');
-const chaseSessionJoin = $('chase-session-join');
-const chaseSessionLeave = $('chase-session-leave');
 const chaseSessionBadge = $('chase-session-badge');
 const chaseSessionList = $('chase-session-list');
 const chaseLeaderboard = $('chase-leaderboard');
@@ -215,7 +211,6 @@ let chaseToggleAutoTimer = null;
 let chaseMusicLibrary = [];
 let chaseMusicPlaylists = [];
 let chaseMusicCollapsed = false;
-let chaseActiveSession = null;
 let chaseHoldStartedAt = null;
 let chaseToggleStartedAt = null;
 
@@ -234,9 +229,6 @@ chaseMusicCollapse.addEventListener('click', () => {
 chasePlaylistFilter.addEventListener('change', () => renderChaseMusicLibrary(chaseMusicSelect.value));
 chasePlaylistCreate.addEventListener('click', createChasePlaylist);
 chasePlaylistDelete.addEventListener('click', deleteSelectedChasePlaylist);
-chaseSessionCreate.addEventListener('click', createChaseSession);
-chaseSessionJoin.addEventListener('click', () => joinChaseSession(chaseSessionCode.value));
-chaseSessionLeave.addEventListener('click', leaveChaseSession);
 [chaseEnabled, chaseDuration, chaseHotkey, chaseMusicMode, chaseMusicSelect, chaseMusic, chaseMusicStart, chaseCheckpointEnabled, chaseCheckpoint].forEach((input) => {
   input.addEventListener('change', saveChaseSettings);
   input.addEventListener('blur', saveChaseSettings);
@@ -282,7 +274,6 @@ function saveChaseSettings() {
       chaseMusicStart: 0,
       chaseCheckpointSfxEnabled: chaseCheckpointEnabled.checked,
       chaseCheckpointSeconds: chaseCheckpointSeconds(),
-      chaseSessionCode: '',
     }).then(() => {
       syncChaseEnabledState();
       setChaseStatus(chaseEnabled.checked ? 'Chase mode enabled' : 'Chase mode disabled', chaseEnabled.checked ? 'ok' : '');
@@ -518,23 +509,14 @@ async function refreshChaseAudioLibrary(selectedId = chaseMusicSelect.value) {
   }
 }
 
-async function loadChaseSession(code = chaseActiveSession?.code || '') {
+async function loadChaseSession() {
   renderChaseSessionList([]);
   const result = await window.sender.getChaseSession('');
   renderChaseSession(result.session || null);
 }
 
-async function refreshChaseSessions() {
-  if (!window.sender.listChaseSessions) return;
-  const result = await window.sender.listChaseSessions();
-  renderChaseSessionList(result.sessions || []);
-}
-
 function renderChaseSession(session) {
-  chaseActiveSession = session || null;
   chaseSessionBadge.textContent = 'Global';
-  chaseSessionCode.value = '';
-  chaseSessionLeave.disabled = !session;
   const players = session?.players || [];
   chaseLeaderboard.innerHTML = '';
   if (!session) {
@@ -559,42 +541,6 @@ function renderChaseSession(session) {
 
 function renderChaseSessionList(sessions) {
   chaseSessionList.innerHTML = '<div class="session-empty">Every 30s+ chase is recorded automatically.</div>';
-}
-
-async function createChaseSession() {
-  setChaseStatus('Creating chase session...');
-  const result = await window.sender.createChaseSession();
-  if (!result.ok) {
-    setChaseStatus(`Could not create session: ${result.error}`, 'err');
-    return;
-  }
-  renderChaseSession(result.session);
-  await refreshChaseSessions();
-  saveChaseSettings();
-  setChaseStatus(`Session ${result.session.code} created`, 'ok');
-}
-
-async function joinChaseSession(code) {
-  const cleanCode = String(code || '').trim().toUpperCase();
-  if (!cleanCode) return;
-  setChaseStatus(`Joining ${cleanCode}...`);
-  const result = await window.sender.joinChaseSession(cleanCode);
-  if (!result.ok) {
-    setChaseStatus(`Could not join session: ${result.error}`, 'err');
-    return;
-  }
-  renderChaseSession(result.session);
-  await refreshChaseSessions();
-  saveChaseSettings();
-  setChaseStatus(`Joined ${result.session.code}`, 'ok');
-}
-
-async function leaveChaseSession() {
-  await window.sender.leaveChaseSession();
-  renderChaseSession(null);
-  await refreshChaseSessions();
-  saveChaseSettings();
-  setChaseStatus('Left chase session', 'ok');
 }
 
 async function submitChaseScore(durationMs) {
