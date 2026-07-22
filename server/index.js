@@ -17,7 +17,6 @@ const persistentRoot = process.env.PERSISTENT_DATA_DIR || '/data';
 const tempAudioDir = path.join(__dirname, 'audio_cache');
 const persistentAudioDir = path.join(persistentRoot, 'audio_cache');
 const chaseLibraryFile = path.join(persistentRoot, 'chase-audio-library.json');
-const chaseSessionsFile = path.join(persistentRoot, 'chase-sessions.json');
 const chaseLeaderboardFile = path.join(persistentRoot, 'chase-leaderboard.json');
 const authUsersFile = path.join(persistentRoot, 'auth-users.json');
 const authSecretFile = path.join(persistentRoot, 'auth-secret.txt');
@@ -97,10 +96,6 @@ function saveChaseLibrary(library) {
   fs.writeFileSync(chaseLibraryFile, JSON.stringify(library, null, 2));
 }
 
-function cleanSessionCode(code) {
-  return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-}
-
 function cleanPlayerName(name) {
   return String(name || 'Player').replace(/[^\w .()[\]-]+/g, '').trim().slice(0, 32) || 'Player';
 }
@@ -158,14 +153,21 @@ function signAuthToken(user) {
 }
 
 function verifyAuthToken(token) {
-  const [payload, signature] = String(token || '').split('.');
-  if (!payload || !signature) return null;
-  const expected = crypto.createHmac('sha256', loadAuthSecret()).update(payload).digest('base64url');
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
-  const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-  const user = loadAuthUsers().users.find(item => item.username.toLowerCase() === String(parsed.sub || '').toLowerCase());
-  if (!user) return null;
-  return { username: user.username, role: user.role || 'user' };
+  try {
+    const [payload, signature] = String(token || '').split('.');
+    if (!payload || !signature) return null;
+    const expected = crypto.createHmac('sha256', loadAuthSecret()).update(payload).digest('base64url');
+    const actualBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+    if (actualBuffer.length !== expectedBuffer.length) return null;
+    if (!crypto.timingSafeEqual(actualBuffer, expectedBuffer)) return null;
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    const user = loadAuthUsers().users.find(item => item.username.toLowerCase() === String(parsed.sub || '').toLowerCase());
+    if (!user) return null;
+    return { username: user.username, role: user.role || 'user' };
+  } catch {
+    return null;
+  }
 }
 
 function authUser(req) {
@@ -175,24 +177,6 @@ function authUser(req) {
 
 function publicAuthUser(user) {
   return user ? { username: user.username, role: user.role || 'user' } : null;
-}
-
-function cleanSessionName(name, fallback = 'Chase Session') {
-  return String(name || fallback).replace(/[^\w .()[\]-]+/g, '').trim().slice(0, 40) || fallback;
-}
-
-function loadChaseSessions() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(chaseSessionsFile, 'utf8'));
-    return { sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [] };
-  } catch {
-    return { sessions: [] };
-  }
-}
-
-function saveChaseSessions(data) {
-  fs.mkdirSync(persistentRoot, { recursive: true });
-  fs.writeFileSync(chaseSessionsFile, JSON.stringify(data, null, 2));
 }
 
 function loadChaseLeaderboard() {
@@ -250,35 +234,6 @@ function rebuildLeaderboardPlayers(data) {
   });
   data.players = [...byPlayer.values()];
   return data;
-}
-
-function publicSession(session) {
-  const players = Array.isArray(session.players) ? session.players : [];
-  return {
-    code: session.code,
-    name: session.name,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    playerCount: players.length,
-    players: players
-      .map(player => ({
-        name: player.name,
-        bestMs: Number(player.bestMs) || 0,
-        runs: Number(player.runs) || 0,
-        updatedAt: player.updatedAt || null,
-      }))
-      .sort((a, b) => b.bestMs - a.bestMs || a.name.localeCompare(b.name)),
-  };
-}
-
-function makeSessionCode(existing) {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  for (let attempt = 0; attempt < 40; attempt++) {
-    let code = '';
-    for (let i = 0; i < 4; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-    if (!existing.has(code)) return code;
-  }
-  return `${Date.now()}`.slice(-6);
 }
 
 function savePersistentAudio(req, prefix) {
@@ -525,79 +480,6 @@ app.post('/api/chase-leaderboard/runs/:id/invalidate', (req, res) => {
   const leaderboard = publicChaseLeaderboard(data);
   io.emit('chase-leaderboard-updated', leaderboard);
   res.json({ ok: true, leaderboard });
-});
-
-app.get('/api/chase-sessions', (_req, res) => {
-  const data = loadChaseSessions();
-  res.json({
-    sessions: data.sessions
-      .map(publicSession)
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-      .slice(0, 20),
-  });
-});
-
-app.post('/api/chase-sessions', (req, res) => {
-  const data = loadChaseSessions();
-  const code = makeSessionCode(new Set(data.sessions.map(session => session.code)));
-  const now = Date.now();
-  const player = cleanPlayerName(req.body?.player);
-  const session = {
-    code,
-    name: cleanSessionName(req.body?.name, `${player}'s Chase`),
-    createdAt: now,
-    updatedAt: now,
-    players: player ? [{ name: player, bestMs: 0, runs: 0, updatedAt: now }] : [],
-  };
-  data.sessions.unshift(session);
-  saveChaseSessions(data);
-  res.json({ ok: true, session: publicSession(session) });
-});
-
-app.post('/api/chase-sessions/:code/join', (req, res) => {
-  const code = cleanSessionCode(req.params.code);
-  const player = cleanPlayerName(req.body?.player);
-  const data = loadChaseSessions();
-  const session = data.sessions.find(item => item.code === code);
-  if (!session) return res.status(404).json({ error: 'session not found' });
-  session.players = Array.isArray(session.players) ? session.players : [];
-  if (!session.players.some(item => item.name.toLowerCase() === player.toLowerCase())) {
-    session.players.push({ name: player, bestMs: 0, runs: 0, updatedAt: Date.now() });
-  }
-  session.updatedAt = Date.now();
-  saveChaseSessions(data);
-  res.json({ ok: true, session: publicSession(session) });
-});
-
-app.get('/api/chase-sessions/:code', (req, res) => {
-  const code = cleanSessionCode(req.params.code);
-  const session = loadChaseSessions().sessions.find(item => item.code === code);
-  if (!session) return res.status(404).json({ error: 'session not found' });
-  res.json({ session: publicSession(session) });
-});
-
-app.post('/api/chase-sessions/:code/score', (req, res) => {
-  const code = cleanSessionCode(req.params.code);
-  const durationMs = Math.floor(Number(req.body?.durationMs) || 0);
-  const player = cleanPlayerName(req.body?.player);
-  const data = loadChaseSessions();
-  const session = data.sessions.find(item => item.code === code);
-  if (!session) return res.status(404).json({ error: 'session not found' });
-  session.players = Array.isArray(session.players) ? session.players : [];
-  let record = session.players.find(item => item.name.toLowerCase() === player.toLowerCase());
-  if (!record) {
-    record = { name: player, bestMs: 0, runs: 0, updatedAt: Date.now() };
-    session.players.push(record);
-  }
-  record.runs = (Number(record.runs) || 0) + 1;
-  if (durationMs >= CHASE_MIN_SCORE_MS && durationMs > (Number(record.bestMs) || 0)) {
-    record.bestMs = durationMs;
-    record.updatedAt = Date.now();
-  }
-  session.updatedAt = Date.now();
-  saveChaseSessions(data);
-  io.emit('chase-session-updated', publicSession(session));
-  res.json({ ok: true, counted: durationMs >= CHASE_MIN_SCORE_MS, session: publicSession(session) });
 });
 
 app.post('/api/chase-audio/sfx-reset', (_req, res) => {

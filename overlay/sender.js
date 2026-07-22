@@ -93,8 +93,8 @@ const chaseCheckpoint = $('chase-checkpoint');
 const chaseSfxImport = $('chase-sfx-import');
 const chaseSfxStatus = $('chase-sfx-status');
 const chaseStatus = $('chase-status');
-const chaseSessionBadge = $('chase-session-badge');
-const chaseSessionList = $('chase-session-list');
+const chaseLeaderboardScope = $('chase-leaderboard-scope');
+const chaseLeaderboardNote = $('chase-leaderboard-note');
 const chaseLeaderboard = $('chase-leaderboard');
 const facecamEnabled = $('facecam-enabled');
 const facecamHotkey = $('facecam-hotkey');
@@ -249,7 +249,7 @@ function loadChaseSettings(settings) {
   const selectedMusic = settings.chaseMusicMode === 'random' ? '__random' : settings.chaseSelectedMusicId || '';
   renderChaseMusicLibrary(selectedMusic);
   refreshChaseAudioLibrary(selectedMusic);
-  loadChaseSession();
+  loadChaseLeaderboard();
   chaseMusic.value = '';
   chaseMusicStart.value = 0;
   chaseCheckpointEnabled.checked = settings.chaseCheckpointSfxEnabled !== false;
@@ -509,17 +509,17 @@ async function refreshChaseAudioLibrary(selectedId = chaseMusicSelect.value) {
   }
 }
 
-async function loadChaseSession() {
-  renderChaseSessionList([]);
-  const result = await window.sender.getChaseSession('');
-  renderChaseSession(result.session || null);
+async function loadChaseLeaderboard() {
+  renderChaseLeaderboardNote();
+  const result = await window.sender.getChaseLeaderboard();
+  renderChaseLeaderboard(result.leaderboard || null);
 }
 
-function renderChaseSession(session) {
-  chaseSessionBadge.textContent = 'Global';
-  const players = session?.players || [];
+function renderChaseLeaderboard(board) {
+  chaseLeaderboardScope.textContent = 'Global';
+  const players = board?.players || [];
   chaseLeaderboard.innerHTML = '';
-  if (!session) {
+  if (!board) {
     chaseLeaderboard.innerHTML = '<div class="leaderboard-empty">No leaderboard loaded yet.</div>';
     return;
   }
@@ -539,13 +539,13 @@ function renderChaseSession(session) {
   });
 }
 
-function renderChaseSessionList(sessions) {
-  chaseSessionList.innerHTML = '<div class="session-empty">Every 30s+ chase is recorded automatically.</div>';
+function renderChaseLeaderboardNote() {
+  chaseLeaderboardNote.innerHTML = '<div class="leaderboard-note-empty">Every 30s+ chase is recorded automatically.</div>';
 }
 
 async function submitChaseScore(durationMs) {
-  const result = await window.sender.submitChaseSessionScore(durationMs);
-  if (result.leaderboard) renderChaseSession({ code: 'GLOBAL', players: result.leaderboard.players || [] });
+  const result = await window.sender.submitChaseScore(durationMs);
+  if (result.leaderboard) renderChaseLeaderboard(result.leaderboard);
   if (result.counted) setChaseStatus(`Leaderboard updated: ${formatChaseMs(durationMs)}`, 'ok');
   else if (durationMs < 30000) setChaseStatus('Chase stopped. Leaderboard starts at 30s.', 'ok');
 }

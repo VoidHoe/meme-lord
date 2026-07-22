@@ -48,7 +48,6 @@ const store = new Store({
     chaseSfxPrepared: null,
     chaseCheckpointSfxEnabled: true,
     chaseCheckpointSeconds: 30,
-    chaseSessionCode: '',
     facecamEnabled: false,
     facecamHotkey: '5',
     facecamTriggerMode: 'hold',
@@ -131,6 +130,46 @@ let facecamSessionId = null;
 let facecamToggleHotkeyLocked = false;
 let facecamToggleHotkeyTimer = null;
 let lastFacecamFrameAt = 0;
+
+function hasAuthSession() {
+  return !!(store.get('authToken') && store.get('authUser')?.username);
+}
+
+function disconnectSocket() {
+  if (!socketClient) return;
+  socketClient.disconnect();
+  socketClient = null;
+}
+
+function clearChaseState({ broadcastStop = false } = {}) {
+  chaseHotkeyActive = false;
+  chaseHotkeyRepeatSeen = false;
+  chaseToggleActive = false;
+  chaseToggleHotkeyLocked = false;
+  if (chaseHotkeyTimer) clearTimeout(chaseHotkeyTimer);
+  if (chaseToggleHotkeyTimer) clearTimeout(chaseToggleHotkeyTimer);
+  if (chaseToggleAutoTimer) clearTimeout(chaseToggleAutoTimer);
+  chaseHotkeyTimer = null;
+  chaseToggleHotkeyTimer = null;
+  chaseToggleAutoTimer = null;
+  chaseHotkeyStartedAt = null;
+  chaseToggleStartedAt = null;
+  if (broadcastStop) sendChase('stop');
+}
+
+function setLoggedOutState() {
+  clearChaseState({ broadcastStop: true });
+  facecamHotkeyActive = false;
+  facecamHotkeyRepeatSeen = false;
+  facecamToggleHotkeyLocked = false;
+  if (facecamHotkeyTimer) clearTimeout(facecamHotkeyTimer);
+  if (facecamToggleHotkeyTimer) clearTimeout(facecamToggleHotkeyTimer);
+  facecamHotkeyTimer = null;
+  facecamToggleHotkeyTimer = null;
+  stopFacecam();
+  disconnectSocket();
+  registerHotkey();
+}
 
 // Only allow one production MemeDrop at a time. Development can opt into a
 // separate visual-test instance without closing the user's installed app.
@@ -378,7 +417,10 @@ ipcMain.on('snip-region', async (_e, bytes) => {
 
 function connectSocket() {
   const settings = store.store;
-  if (!settings.serverUrl || !settings.discordUsername) return;
+  if (!hasAuthSession() || !settings.serverUrl || !settings.discordUsername) {
+    disconnectSocket();
+    return;
+  }
 
   if (socketClient) socketClient.disconnect();
 
@@ -442,12 +484,12 @@ function registerHotkey() {
   }
 
   const chaseKey = store.get('chaseEnabled') ? store.get('chaseHotkey') : '';
-  if (chaseKey) {
+  if (hasAuthSession() && chaseKey) {
     registerHotkeyVariants('chase', chaseKey, triggerChaseHotkey);
   }
 
   const facecamKey = store.get('facecamEnabled') ? store.get('facecamHotkey') : '';
-  if (facecamKey) {
+  if (hasAuthSession() && facecamKey) {
     registerHotkeyVariants('facecam', facecamKey, triggerFacecamHotkey);
   }
 
@@ -633,20 +675,6 @@ async function fetchChaseAudioLibrary() {
   return data;
 }
 
-async function chaseSessionRequest(pathname, options = {}) {
-  const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
-  const res = await fetch(`${serverUrl}${pathname}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `session failed: ${res.status}`);
-  return data;
-}
-
 async function authRequest(pathname, options = {}) {
   const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
   const token = store.get('authToken') || '';
@@ -663,7 +691,36 @@ async function authRequest(pathname, options = {}) {
   return data;
 }
 
-async function submitChaseSessionScore(durationMs) {
+async function refreshStoredAuthSession() {
+  const token = store.get('authToken') || '';
+  const cached = store.get('authUser') || null;
+  if (!token) {
+    store.set('authUser', null);
+    return { ok: false, user: null };
+  }
+  try {
+    const result = await authRequest('/api/auth/me');
+    store.set('authUser', result.user || cached);
+    if (result.user?.username) store.set('discordUsername', result.user.username);
+    return { ok: true, user: result.user || cached };
+  } catch (err) {
+    store.set({ authToken: '', authUser: null });
+    return { ok: false, user: null, error: err.message };
+  }
+}
+
+async function initializeAuthenticatedServices() {
+  registerHotkey();
+  const status = await refreshStoredAuthSession();
+  if (status.ok) {
+    connectSocket();
+    registerHotkey();
+  } else {
+    setLoggedOutState();
+  }
+}
+
+async function submitChaseScore(durationMs) {
   try {
     return await authRequest('/api/chase-leaderboard/score', {
       method: 'POST',
@@ -769,6 +826,7 @@ async function sendChase(command) {
 }
 
 function triggerChaseHotkey() {
+  if (!hasAuthSession()) return;
   if (store.get('chaseTriggerMode') === 'toggle') {
     triggerChaseToggleHotkey();
     return;
@@ -787,13 +845,14 @@ function triggerChaseHotkey() {
     chaseHotkeyActive = false;
     chaseHotkeyRepeatSeen = false;
     chaseHotkeyTimer = null;
-    if (chaseHotkeyStartedAt) submitChaseSessionScore(Date.now() - chaseHotkeyStartedAt);
+    if (chaseHotkeyStartedAt) submitChaseScore(Date.now() - chaseHotkeyStartedAt);
     chaseHotkeyStartedAt = null;
     sendChase('stop');
   }, releaseGraceMs);
 }
 
 function triggerChaseToggleHotkey() {
+  if (!hasAuthSession()) return;
   if (chaseToggleHotkeyLocked) {
     if (chaseToggleHotkeyTimer) clearTimeout(chaseToggleHotkeyTimer);
     chaseToggleHotkeyTimer = setTimeout(() => {
@@ -806,7 +865,7 @@ function triggerChaseToggleHotkey() {
   chaseToggleActive = !chaseToggleActive;
   if (chaseToggleActive) chaseToggleStartedAt = Date.now();
   else if (chaseToggleStartedAt) {
-    submitChaseSessionScore(Date.now() - chaseToggleStartedAt);
+    submitChaseScore(Date.now() - chaseToggleStartedAt);
     chaseToggleStartedAt = null;
   }
   sendChase(chaseToggleActive ? 'start' : 'stop');
@@ -817,10 +876,11 @@ function triggerChaseToggleHotkey() {
   if (chaseToggleActive) {
     const durationMs = Math.min(180, Math.max(5, Number(store.get('chaseDuration')) || 60)) * 1000;
     chaseToggleAutoTimer = setTimeout(() => {
-      if (chaseToggleStartedAt) submitChaseSessionScore(Date.now() - chaseToggleStartedAt);
+      if (chaseToggleStartedAt) submitChaseScore(Date.now() - chaseToggleStartedAt);
       chaseToggleStartedAt = null;
       chaseToggleActive = false;
       chaseToggleAutoTimer = null;
+      sendChase('stop');
     }, durationMs + 1000);
   }
   if (chaseToggleHotkeyTimer) clearTimeout(chaseToggleHotkeyTimer);
@@ -845,6 +905,7 @@ function facecamPayload(extra = {}) {
 }
 
 function startFacecam() {
+  if (!hasAuthSession()) return;
   if (facecamSessionId) return;
   facecamSessionId = `facecam-${Date.now()}`;
   lastFacecamFrameAt = 0;
@@ -879,6 +940,7 @@ function stopFacecam() {
 }
 
 function triggerFacecamHotkey() {
+  if (!hasAuthSession()) return;
   if (store.get('facecamTriggerMode') === 'toggle') {
     triggerFacecamToggleHotkey();
     return;
@@ -901,6 +963,7 @@ function triggerFacecamHotkey() {
 }
 
 function triggerFacecamToggleHotkey() {
+  if (!hasAuthSession()) return;
   if (facecamToggleHotkeyLocked) {
     if (facecamToggleHotkeyTimer) clearTimeout(facecamToggleHotkeyTimer);
     facecamToggleHotkeyTimer = setTimeout(() => {
@@ -924,21 +987,12 @@ function triggerFacecamToggleHotkey() {
 ipcMain.handle('get-settings', () => store.store);
 
 ipcMain.handle('save-settings', (_event, newSettings) => {
+  const previous = { ...store.store };
   store.set(newSettings);
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.webContents.send('settings-changed', store.store);
     if (newSettings.chaseEnabled === false) {
-      chaseHotkeyActive = false;
-      chaseToggleActive = false;
-      if (chaseHotkeyTimer) clearTimeout(chaseHotkeyTimer);
-      if (chaseToggleHotkeyTimer) clearTimeout(chaseToggleHotkeyTimer);
-      if (chaseToggleAutoTimer) clearTimeout(chaseToggleAutoTimer);
-      chaseHotkeyTimer = null;
-      chaseToggleHotkeyTimer = null;
-      chaseToggleAutoTimer = null;
-      chaseHotkeyStartedAt = null;
-      chaseToggleStartedAt = null;
-      sendChase('stop');
+      clearChaseState({ broadcastStop: true });
     }
     if (newSettings.facecamEnabled === false) {
       facecamHotkeyActive = false;
@@ -950,12 +1004,19 @@ ipcMain.handle('save-settings', (_event, newSettings) => {
       stopFacecam();
     }
   }
-  connectSocket();
-  registerHotkey();
+  const reconnectKeys = ['serverUrl', 'discordUsername'];
+  if (reconnectKeys.some(key => Object.prototype.hasOwnProperty.call(newSettings, key) && previous[key] !== store.get(key))) {
+    connectSocket();
+  }
+  const hotkeyKeys = ['snipHotkey', 'chaseEnabled', 'chaseHotkey', 'chaseTriggerMode', 'facecamEnabled', 'facecamHotkey', 'facecamTriggerMode'];
+  if (hotkeyKeys.some(key => Object.prototype.hasOwnProperty.call(newSettings, key) && previous[key] !== store.get(key))) {
+    registerHotkey();
+  }
   return store.store;
 });
 
 ipcMain.on('facecam-frame', (_event, image) => {
+  if (!hasAuthSession()) return;
   if (!facecamSessionId || !image) return;
   const frame = String(image);
   if (frame.length > 260000) return;
@@ -1260,17 +1321,11 @@ ipcMain.handle('delete-chase-music', async (_event, id) => {
 });
 
 ipcMain.handle('auth-status', async () => {
-  const token = store.get('authToken') || '';
-  const cached = store.get('authUser') || null;
-  if (!token) return { ok: false, user: null };
-  try {
-    const result = await authRequest('/api/auth/me');
-    store.set('authUser', result.user || cached);
-    if (result.user?.username) store.set('discordUsername', result.user.username);
-    return { ok: true, user: result.user || cached };
-  } catch (err) {
-    return { ok: false, user: cached, error: err.message };
+  const status = await refreshStoredAuthSession();
+  if (!status.ok) {
+    setLoggedOutState();
   }
+  return status;
 });
 
 ipcMain.handle('auth-register', async (_event, { username, password }) => {
@@ -1280,6 +1335,8 @@ ipcMain.handle('auth-register', async (_event, { username, password }) => {
       body: JSON.stringify({ username, password }),
     });
     store.set({ authToken: result.token || '', authUser: result.user || null, discordUsername: result.user?.username || username || '' });
+    connectSocket();
+    registerHotkey();
     return result;
   } catch (err) {
     return { ok: false, error: err.message };
@@ -1294,6 +1351,7 @@ ipcMain.handle('auth-login', async (_event, { username, password }) => {
     });
     store.set({ authToken: result.token || '', authUser: result.user || null, discordUsername: result.user?.username || username || '' });
     connectSocket();
+    registerHotkey();
     return result;
   } catch (err) {
     return { ok: false, error: err.message };
@@ -1302,63 +1360,21 @@ ipcMain.handle('auth-login', async (_event, { username, password }) => {
 
 ipcMain.handle('auth-logout', () => {
   store.set({ authToken: '', authUser: null });
+  setLoggedOutState();
   return { ok: true };
 });
 
-ipcMain.handle('list-chase-sessions', async () => {
+ipcMain.handle('get-chase-leaderboard', async () => {
   try {
-    const result = await chaseSessionRequest('/api/chase-leaderboard');
-    return { sessions: [], leaderboard: result.leaderboard };
+    const result = await authRequest('/api/chase-leaderboard');
+    return { leaderboard: result.leaderboard };
   } catch (err) {
-    return { sessions: [], error: err.message };
+    return { leaderboard: null, error: err.message };
   }
 });
 
-ipcMain.handle('create-chase-session', async () => {
-  try {
-    const player = store.get('discordUsername') || 'me';
-    const result = await chaseSessionRequest('/api/chase-sessions', {
-      method: 'POST',
-      body: JSON.stringify({ player }),
-    });
-    if (result.session?.code) store.set('chaseSessionCode', result.session.code);
-    return result;
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle('join-chase-session', async (_event, code) => {
-  try {
-    const player = store.get('discordUsername') || 'me';
-    const cleanCode = String(code || '').trim().toUpperCase();
-    const result = await chaseSessionRequest(`/api/chase-sessions/${encodeURIComponent(cleanCode)}/join`, {
-      method: 'POST',
-      body: JSON.stringify({ player }),
-    });
-    if (result.session?.code) store.set('chaseSessionCode', result.session.code);
-    return result;
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
-ipcMain.handle('leave-chase-session', () => {
-  store.set('chaseSessionCode', '');
-  return { ok: true };
-});
-
-ipcMain.handle('get-chase-session', async (_event, code = store.get('chaseSessionCode')) => {
-  try {
-    const result = await chaseSessionRequest('/api/chase-leaderboard');
-    return { session: { code: 'GLOBAL', players: result.leaderboard?.players || [] }, leaderboard: result.leaderboard };
-  } catch (err) {
-    return { session: null, error: err.message };
-  }
-});
-
-ipcMain.handle('submit-chase-session-score', async (_event, durationMs) => {
-  const result = await submitChaseSessionScore(durationMs);
+ipcMain.handle('submit-chase-score', async (_event, durationMs) => {
+  const result = await submitChaseScore(durationMs);
   return result || { skipped: true };
 });
 
@@ -1520,8 +1536,7 @@ app.whenReady().then(() => {
   });
 
   createOverlayWindow();
-  connectSocket();
-  registerHotkey();
+  initializeAuthenticatedServices();
   if (!app.isPackaged && process.argv.includes('--show-sender')) createSenderWindow();
 
   // Vérifier les mises à jour (seulement en production, pas en dev)
