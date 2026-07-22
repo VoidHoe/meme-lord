@@ -40,6 +40,7 @@
           <button class="tab" data-tab="chase"><span>⏱</span>Chase</button>
           <button class="tab" data-tab="facecam"><span>▥</span>Facecam</button>
           <button class="tab settings-tab" data-tab="settings"><span>⚙</span>Settings</button>
+          <button class="tab" data-tab="profile"><span>@</span>Profile</button>
         </nav>
         <div class="sidebar-note">Fast jokes.<br>Perfect timing.</div>
       </aside>
@@ -178,9 +179,9 @@
             <section class="settings-card chase-leaderboard-card">
               <div class="leaderboard-head">
                 <h2>Chase leaderboard</h2>
-                <span id="chase-leaderboard-scope">Global</span>
+                <span id="chase-leaderboard-scope">Weekly</span>
               </div>
-              <div id="chase-leaderboard-note" class="leaderboard-note">Every 30s+ chase is recorded automatically.</div>
+              <div id="chase-leaderboard-note" class="leaderboard-note">Only 30s+ chases count as weekly runs.</div>
               <div id="chase-leaderboard" class="leaderboard-list"></div>
               <p class="setting-note">Your best only updates when a new chase is longer than your current record.</p>
             </section>
@@ -214,6 +215,27 @@
                 <div id="facecam-placement-box">CAM</div>
               </div>
               <div class="placement-readout">X <span id="facecam-pos-x">78</span>% · Y <span id="facecam-pos-y">8</span>%</div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel page-panel profile-page" id="profile-panel">
+          <div class="page-head"><div><h1>Profile</h1><p>Your weekly chase record, rank and podium badges.</p></div></div>
+          <div class="profile-grid">
+            <section class="settings-card profile-hero">
+              <div class="profile-avatar" id="profile-avatar">?</div>
+              <div><h2 id="profile-name">Not logged in</h2><p id="profile-rank">No weekly rank yet</p></div>
+            </section>
+            <section class="settings-card profile-stat"><span>Weekly best</span><strong id="profile-weekly-best">--:--.--</strong></section>
+            <section class="settings-card profile-stat"><span>Weekly runs</span><strong id="profile-weekly-runs">0</strong></section>
+            <section class="settings-card profile-stat"><span>All-time best</span><strong id="profile-alltime-best">--:--.--</strong></section>
+            <section class="settings-card profile-wide">
+              <div class="leaderboard-head"><h2>Weekly leaderboard</h2><span>Top 30s+</span></div>
+              <div id="profile-leaderboard" class="leaderboard-list"></div>
+            </section>
+            <section class="settings-card profile-wide">
+              <div class="leaderboard-head"><h2>Weekly badges</h2><span>Top 3</span></div>
+              <div id="profile-badges" class="badge-grid"></div>
             </section>
           </div>
         </section>

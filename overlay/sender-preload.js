@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('sender', {
   deleteChasePlaylist: (id)          => ipcRenderer.invoke('delete-chase-playlist', id),
   moveChaseMusicToPlaylist: (trackId, playlistId) => ipcRenderer.invoke('move-chase-music-to-playlist', { trackId, playlistId }),
   getChaseLeaderboard: ()            => ipcRenderer.invoke('get-chase-leaderboard'),
+  getProfile: ()                     => ipcRenderer.invoke('get-profile'),
   submitChaseScore: (ms)             => ipcRenderer.invoke('submit-chase-score', ms),
   resolveLink:    (url)              => ipcRenderer.invoke('resolve-link', url),
   uploadAudio:    (buf)              => ipcRenderer.invoke('upload-audio', buf),

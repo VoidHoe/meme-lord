@@ -41,6 +41,8 @@ const store = new Store({
     chaseDuration: 60,
     chaseMusicUrl: 'https://youtu.be/N_og7Lok8j8',
     chaseMusicLibrary: [],
+    chaseMusicPlaylists: [],
+    chaseSelectedPlaylistId: '',
     chaseMusicMode: 'manual',
     chaseSelectedMusicId: '',
     chaseMusicStart: 10,
@@ -583,8 +585,13 @@ function listChaseSfx(dir = store.get('chaseSfxDir')) {
 function selectedChaseMusic() {
   const mode = store.get('chaseMusicMode') || 'manual';
   const library = Array.isArray(store.get('chaseMusicLibrary')) ? store.get('chaseMusicLibrary') : [];
-  if (mode === 'random' && library.length) {
-    return library[Math.floor(Math.random() * library.length)];
+  const playlists = Array.isArray(store.get('chaseMusicPlaylists')) ? store.get('chaseMusicPlaylists') : [];
+  const playlistId = store.get('chaseSelectedPlaylistId') || '';
+  const playlist = playlistId ? playlists.find(item => item.id === playlistId) : null;
+  const playlistTrackIds = new Set(Array.isArray(playlist?.trackIds) ? playlist.trackIds : []);
+  const randomPool = playlist ? library.filter(track => playlistTrackIds.has(track.id)) : library;
+  if (mode === 'random' && randomPool.length) {
+    return randomPool[Math.floor(Math.random() * randomPool.length)];
   }
   if (mode === 'library') {
     const selected = library.find(track => track.id === store.get('chaseSelectedMusicId'));
@@ -1236,9 +1243,9 @@ ipcMain.handle('choose-chase-audio', async () => {
   }
   if (tracks[0]) store.set('chaseMusicMode', 'library');
   const library = await fetchChaseAudioLibrary();
-  store.set('chaseMusicLibrary', library.music || []);
+  store.set({ chaseMusicLibrary: library.music || [], chaseMusicPlaylists: library.playlists || [] });
   if (tracks[0]) store.set('chaseSelectedMusicId', tracks[0].id);
-  return { tracks, library: library.music || [] };
+  return { tracks, library };
 });
 
 ipcMain.handle('choose-chase-sfx-folder', async () => {
@@ -1266,7 +1273,7 @@ ipcMain.handle('choose-chase-sfx-folder', async () => {
 ipcMain.handle('get-chase-audio-library', async () => {
   try {
     const library = await fetchChaseAudioLibrary();
-    store.set({ chaseMusicLibrary: library.music || [], chaseSfxPrepared: library.sfx || null });
+    store.set({ chaseMusicLibrary: library.music || [], chaseMusicPlaylists: library.playlists || [], chaseSfxPrepared: library.sfx || null });
     return library;
   } catch (err) {
     return { music: [], sfx: { start: null, end: null, checkpoints: [] }, error: err.message };
@@ -1282,7 +1289,7 @@ ipcMain.handle('create-chase-playlist', async (_event, name) => {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, error: body.error || `HTTP ${res.status}` };
-  store.set('chaseMusicLibrary', body.library?.music || []);
+  store.set({ chaseMusicLibrary: body.library?.music || [], chaseMusicPlaylists: body.library?.playlists || [] });
   return { ok: true, library: body.library || { music: [], playlists: [] }, playlist: body.playlist };
 });
 
@@ -1291,7 +1298,7 @@ ipcMain.handle('delete-chase-playlist', async (_event, id) => {
   const res = await fetch(`${serverUrl}/api/chase-audio/playlists/${encodeURIComponent(id)}`, { method: 'DELETE' });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, error: body.error || `HTTP ${res.status}` };
-  store.set('chaseMusicLibrary', body.library?.music || []);
+  store.set({ chaseMusicLibrary: body.library?.music || [], chaseMusicPlaylists: body.library?.playlists || [], chaseSelectedPlaylistId: '' });
   return { ok: true, library: body.library || { music: [], playlists: [] } };
 });
 
@@ -1304,7 +1311,7 @@ ipcMain.handle('move-chase-music-to-playlist', async (_event, { trackId, playlis
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, error: body.error || `HTTP ${res.status}` };
-  store.set('chaseMusicLibrary', body.library?.music || []);
+  store.set({ chaseMusicLibrary: body.library?.music || [], chaseMusicPlaylists: body.library?.playlists || [] });
   return { ok: true, library: body.library || { music: [], playlists: [] } };
 });
 
@@ -1313,7 +1320,7 @@ ipcMain.handle('delete-chase-music', async (_event, id) => {
   const res = await fetch(`${serverUrl}/api/chase-audio/music/${encodeURIComponent(id)}`, { method: 'DELETE' });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, error: body.error || `HTTP ${res.status}` };
-  store.set('chaseMusicLibrary', body.library?.music || []);
+  store.set({ chaseMusicLibrary: body.library?.music || [], chaseMusicPlaylists: body.library?.playlists || [] });
   if (store.get('chaseSelectedMusicId') === id) {
     store.set('chaseSelectedMusicId', body.library?.music?.[0]?.id || '');
   }
@@ -1370,6 +1377,14 @@ ipcMain.handle('get-chase-leaderboard', async () => {
     return { leaderboard: result.leaderboard };
   } catch (err) {
     return { leaderboard: null, error: err.message };
+  }
+});
+
+ipcMain.handle('get-profile', async () => {
+  try {
+    return await authRequest('/api/profile');
+  } catch (err) {
+    return { ok: false, error: err.message };
   }
 });
 

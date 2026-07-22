@@ -117,6 +117,7 @@ const PANELS = {
   history: 'history-panel',
   chase: 'chase-panel',
   facecam: 'facecam-panel',
+  profile: 'profile-panel',
   settings: 'settings-panel',
 };
 
@@ -128,6 +129,7 @@ function showTab(name) {
   if (name === 'history') loadHistory();
   if (name === 'chase') window.sender.getSettings().then(loadChaseSettings);
   if (name === 'facecam') window.sender.getSettings().then(loadFacecamSettings);
+  if (name === 'profile') loadProfile();
   if (name === 'settings') loadSettingsForm();
 }
 
@@ -226,7 +228,10 @@ chaseMusicCollapse.addEventListener('click', () => {
   chaseMusicCollapsed = !chaseMusicCollapsed;
   renderChaseMusicPicker();
 });
-chasePlaylistFilter.addEventListener('change', () => renderChaseMusicLibrary(chaseMusicSelect.value));
+chasePlaylistFilter.addEventListener('change', () => {
+  renderChaseMusicLibrary(chaseMusicSelect.value);
+  saveChaseSettings();
+});
 chasePlaylistCreate.addEventListener('click', createChasePlaylist);
 chasePlaylistDelete.addEventListener('click', deleteSelectedChasePlaylist);
 [chaseEnabled, chaseDuration, chaseHotkey, chaseMusicMode, chaseMusicSelect, chaseMusic, chaseMusicStart, chaseCheckpointEnabled, chaseCheckpoint].forEach((input) => {
@@ -246,6 +251,8 @@ function loadChaseSettings(settings) {
   chaseDuration.value = settings.chaseDuration ?? 60;
   chaseHotkey.value = settings.chaseHotkey ?? '6';
   chaseMusicLibrary = Array.isArray(settings.chaseMusicLibrary) ? settings.chaseMusicLibrary : [];
+  chaseMusicPlaylists = Array.isArray(settings.chaseMusicPlaylists) ? settings.chaseMusicPlaylists : [];
+  chasePlaylistFilter.value = settings.chaseSelectedPlaylistId || '';
   const selectedMusic = settings.chaseMusicMode === 'random' ? '__random' : settings.chaseSelectedMusicId || '';
   renderChaseMusicLibrary(selectedMusic);
   refreshChaseAudioLibrary(selectedMusic);
@@ -270,6 +277,8 @@ function saveChaseSettings() {
       chaseMusicMode: chaseMusicSelect.value === '__random' ? 'random' : 'library',
       chaseSelectedMusicId: chaseMusicSelect.value === '__random' ? '' : chaseMusicSelect.value,
       chaseMusicLibrary,
+      chaseMusicPlaylists,
+      chaseSelectedPlaylistId: chasePlaylistFilter.value || '',
       chaseMusicUrl: '',
       chaseMusicStart: 0,
       chaseCheckpointSfxEnabled: chaseCheckpointEnabled.checked,
@@ -285,6 +294,7 @@ function renderChaseMusicLibrary(selectedId = chaseMusicSelect.value) {
   while (chaseMusicSelect.options.length) chaseMusicSelect.remove(0);
   chaseMusicPicker.innerHTML = '';
   renderChasePlaylistControls();
+  const visibleTracks = visibleChaseTracks();
   if (!chaseMusicLibrary.length) {
     const option = document.createElement('option');
     option.value = '';
@@ -301,7 +311,7 @@ function renderChaseMusicLibrary(selectedId = chaseMusicSelect.value) {
   randomOption.value = '__random';
   randomOption.textContent = 'Random song';
   chaseMusicSelect.appendChild(randomOption);
-  chaseMusicLibrary.forEach((track) => {
+  visibleTracks.forEach((track) => {
     const option = document.createElement('option');
     option.value = track.id;
     option.textContent = track.name || 'Imported track';
@@ -309,9 +319,9 @@ function renderChaseMusicLibrary(selectedId = chaseMusicSelect.value) {
   });
   chaseMusicSelect.value = selectedId === '__random'
     ? '__random'
-    : chaseMusicLibrary.some(track => track.id === selectedId)
+    : visibleTracks.some(track => track.id === selectedId)
     ? selectedId
-    : chaseMusicLibrary[0].id;
+    : visibleTracks[0]?.id || '__random';
   renderChaseMusicPicker();
 }
 
@@ -454,6 +464,7 @@ async function createChasePlaylist() {
     chasePlaylistFilter.value = result.playlist?.id || '';
     chasePlaylistName.value = '';
     renderChaseMusicLibrary(chaseMusicSelect.value);
+    saveChaseSettings();
     setChaseStatus(`Playlist ${result.playlist?.name || name} created`, 'ok');
   } catch (error) {
     setChaseStatus(`Could not create playlist: ${error.message}`, 'err');
@@ -473,6 +484,7 @@ async function deleteSelectedChasePlaylist() {
     chaseMusicPlaylists = Array.isArray(result.library?.playlists) ? result.library.playlists : [];
     chasePlaylistFilter.value = '';
     renderChaseMusicLibrary(chaseMusicSelect.value);
+    saveChaseSettings();
     setChaseStatus(`Playlist ${playlist.name} deleted`, 'ok');
   } catch (error) {
     setChaseStatus(`Could not delete playlist: ${error.message}`, 'err');
@@ -487,6 +499,7 @@ async function moveChaseMusicToPlaylist(track, playlistId) {
     chaseMusicLibrary = Array.isArray(result.library?.music) ? result.library.music : [];
     chaseMusicPlaylists = Array.isArray(result.library?.playlists) ? result.library.playlists : [];
     renderChaseMusicLibrary(chaseMusicSelect.value);
+    saveChaseSettings();
     setChaseStatus(playlistId ? 'Song moved to playlist' : 'Song removed from playlist', 'ok');
   } catch (error) {
     setChaseStatus(`Could not move song: ${error.message}`, 'err');
@@ -516,7 +529,7 @@ async function loadChaseLeaderboard() {
 }
 
 function renderChaseLeaderboard(board) {
-  chaseLeaderboardScope.textContent = 'Global';
+  chaseLeaderboardScope.textContent = board?.scope === 'weekly' ? 'Weekly' : 'Weekly';
   const players = board?.players || [];
   chaseLeaderboard.innerHTML = '';
   if (!board) {
@@ -539,15 +552,33 @@ function renderChaseLeaderboard(board) {
   });
 }
 
+function renderLeaderboardRows(container, players) {
+  container.innerHTML = '';
+  if (!players?.length) {
+    container.innerHTML = '<div class="leaderboard-empty">No scores yet.</div>';
+    return;
+  }
+  players.forEach((player, index) => {
+    const row = document.createElement('div');
+    row.className = 'leaderboard-row';
+    row.innerHTML = `<span class="leaderboard-rank"></span><span class="leaderboard-name"></span><strong></strong><small></small>`;
+    row.querySelector('.leaderboard-rank').textContent = `#${player.rank || index + 1}`;
+    row.querySelector('.leaderboard-name').textContent = player.name || 'Player';
+    row.querySelector('strong').textContent = player.bestMs ? formatChaseMs(player.bestMs) : '--:--.--';
+    row.querySelector('small').textContent = `${player.runs || 0} run${player.runs === 1 ? '' : 's'}`;
+    container.appendChild(row);
+  });
+}
+
 function renderChaseLeaderboardNote() {
-  chaseLeaderboardNote.innerHTML = '<div class="leaderboard-note-empty">Every 30s+ chase is recorded automatically.</div>';
+  chaseLeaderboardNote.innerHTML = '<div class="leaderboard-note-empty">Only 30s+ chases count as weekly runs.</div>';
 }
 
 async function submitChaseScore(durationMs) {
   const result = await window.sender.submitChaseScore(durationMs);
   if (result.leaderboard) renderChaseLeaderboard(result.leaderboard);
   if (result.counted) setChaseStatus(`Leaderboard updated: ${formatChaseMs(durationMs)}`, 'ok');
-  else if (durationMs < 30000) setChaseStatus('Chase stopped. Leaderboard starts at 30s.', 'ok');
+  else if (durationMs < 30000) setChaseStatus('Chase stopped. Under 30s does not count as a run.', 'ok');
 }
 
 function formatChaseMs(ms) {
@@ -556,6 +587,55 @@ function formatChaseMs(ms) {
   const seconds = Math.floor((centiseconds % 6000) / 100);
   const centis = centiseconds % 100;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(centis).padStart(2, '0')}`;
+}
+
+async function loadProfile() {
+  const boardEl = $('profile-leaderboard');
+  const badgesEl = $('profile-badges');
+  boardEl.innerHTML = '<div class="leaderboard-empty">Loading profile...</div>';
+  badgesEl.innerHTML = '<div class="leaderboard-empty">Loading badges...</div>';
+  const result = await window.sender.getProfile();
+  if (!result.ok) {
+    $('profile-name').textContent = 'Not logged in';
+    $('profile-rank').textContent = result.error || 'Profile unavailable';
+    $('profile-avatar').textContent = '?';
+    $('profile-weekly-best').textContent = '--:--.--';
+    $('profile-weekly-runs').textContent = '0';
+    $('profile-alltime-best').textContent = '--:--.--';
+    boardEl.innerHTML = '<div class="leaderboard-empty">Log in to see the weekly board.</div>';
+    badgesEl.innerHTML = '<div class="leaderboard-empty">No badges yet.</div>';
+    return;
+  }
+  const profile = result.profile || {};
+  const user = profile.user || {};
+  const stats = profile.stats || {};
+  const name = user.username || 'Player';
+  $('profile-name').textContent = name;
+  $('profile-avatar').textContent = name.slice(0, 1).toUpperCase();
+  $('profile-rank').textContent = stats.currentWeekRank ? `Weekly rank #${stats.currentWeekRank}` : 'No weekly rank yet';
+  $('profile-weekly-best').textContent = stats.weeklyBestMs ? formatChaseMs(stats.weeklyBestMs) : '--:--.--';
+  $('profile-weekly-runs').textContent = String(stats.weeklyRuns || 0);
+  $('profile-alltime-best').textContent = stats.allTimeBestMs ? formatChaseMs(stats.allTimeBestMs) : '--:--.--';
+  renderLeaderboardRows(boardEl, result.leaderboard?.players || []);
+  renderBadges(profile.badges || []);
+}
+
+function renderBadges(badges) {
+  const badgesEl = $('profile-badges');
+  badgesEl.innerHTML = '';
+  if (!badges.length) {
+    badgesEl.innerHTML = '<div class="leaderboard-empty">Finish top 3 in a week to earn a badge.</div>';
+    return;
+  }
+  badges.forEach((badge) => {
+    const item = document.createElement('div');
+    item.className = `badge-card rank-${badge.rank || 0}`;
+    item.innerHTML = '<strong></strong><span></span><small></small>';
+    item.querySelector('strong').textContent = `#${badge.rank}`;
+    item.querySelector('span').textContent = badge.week || 'Week';
+    item.querySelector('small').textContent = `${formatChaseMs(badge.bestMs)} best`;
+    badgesEl.appendChild(item);
+  });
 }
 
 function syncChaseEnabledState() {
@@ -625,8 +705,9 @@ function chaseCheckpointSeconds() {
 
 function chasePayload(command, id) {
   let track = null;
-  if (chaseMusicSelect.value === '__random' && chaseMusicLibrary.length) {
-    track = chaseMusicLibrary[Math.floor(Math.random() * chaseMusicLibrary.length)];
+  const randomPool = visibleChaseTracks();
+  if (chaseMusicSelect.value === '__random' && randomPool.length) {
+    track = randomPool[Math.floor(Math.random() * randomPool.length)];
   } else {
     track = chaseMusicLibrary.find(item => item.id === chaseMusicSelect.value) || null;
   }

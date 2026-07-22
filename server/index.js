@@ -196,9 +196,104 @@ function saveChaseLeaderboard(data) {
   fs.writeFileSync(chaseLeaderboardFile, JSON.stringify(data, null, 2));
 }
 
-function publicChaseLeaderboard(data) {
+function startOfWeekMs(now = Date.now()) {
+  const date = new Date(now);
+  const day = date.getUTCDay();
+  const diff = (day + 6) % 7;
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() - diff);
+  return date.getTime();
+}
+
+function weekLabel(weekStart) {
+  const date = new Date(Number(weekStart) || Date.now());
+  return date.toISOString().slice(0, 10);
+}
+
+function leaderboardFromRuns(runs, { since = 0 } = {}) {
+  const byPlayer = new Map();
+  (runs || []).forEach((run) => {
+    if (run.invalidated || !run.counted || Number(run.durationMs) < CHASE_MIN_SCORE_MS) return;
+    if (since && Number(run.at) < since) return;
+    const name = cleanPlayerName(run.player);
+    if (!byPlayer.has(name)) byPlayer.set(name, { name, bestMs: 0, runs: 0, updatedAt: null });
+    const record = byPlayer.get(name);
+    record.runs += 1;
+    if (Number(run.durationMs) > record.bestMs) {
+      record.bestMs = Number(run.durationMs) || 0;
+      record.updatedAt = run.at || Date.now();
+    }
+  });
+  return [...byPlayer.values()];
+}
+
+function weeklyPodiums(runs) {
+  const byWeek = new Map();
+  (runs || []).forEach((run) => {
+    if (run.invalidated || !run.counted || Number(run.durationMs) < CHASE_MIN_SCORE_MS) return;
+    const weekStart = startOfWeekMs(Number(run.at) || Date.now());
+    if (!byWeek.has(weekStart)) byWeek.set(weekStart, []);
+    byWeek.get(weekStart).push(run);
+  });
+  return [...byWeek.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([weekStart, weekRuns]) => ({
+      weekStart,
+      label: weekLabel(weekStart),
+      players: leaderboardFromRuns(weekRuns)
+        .sort((a, b) => b.bestMs - a.bestMs || a.name.localeCompare(b.name))
+        .slice(0, 3)
+        .map((player, index) => ({ ...player, rank: index + 1 })),
+    }))
+    .filter(week => week.players.length);
+}
+
+function profileFromLeaderboard(data, user) {
+  const player = cleanPlayerName(user.username);
+  const now = Date.now();
+  const weekStart = startOfWeekMs(now);
+  const countedRuns = (data.runs || []).filter(run =>
+    !run.invalidated &&
+    run.counted &&
+    Number(run.durationMs) >= CHASE_MIN_SCORE_MS &&
+    cleanPlayerName(run.player).toLowerCase() === player.toLowerCase()
+  );
+  const weeklyRuns = countedRuns.filter(run => Number(run.at) >= weekStart);
+  const currentWeekBoard = leaderboardFromRuns(data.runs || [], { since: weekStart })
+    .sort((a, b) => b.bestMs - a.bestMs || a.name.localeCompare(b.name));
+  const currentRank = currentWeekBoard.findIndex(item => item.name.toLowerCase() === player.toLowerCase());
+  const badges = weeklyPodiums(data.runs || [])
+    .flatMap(week => week.players
+      .filter(item => item.name.toLowerCase() === player.toLowerCase())
+      .map(item => ({
+        weekStart: week.weekStart,
+        week: week.label,
+        rank: item.rank,
+        bestMs: item.bestMs,
+        runs: item.runs,
+      })));
   return {
-    players: (data.players || [])
+    user: publicAuthUser(user),
+    stats: {
+      totalRuns: countedRuns.length,
+      allTimeBestMs: countedRuns.reduce((best, run) => Math.max(best, Number(run.durationMs) || 0), 0),
+      weeklyRuns: weeklyRuns.length,
+      weeklyBestMs: weeklyRuns.reduce((best, run) => Math.max(best, Number(run.durationMs) || 0), 0),
+      currentWeekRank: currentRank >= 0 ? currentRank + 1 : null,
+    },
+    badges,
+  };
+}
+
+function publicChaseLeaderboard(data) {
+  const weekStart = startOfWeekMs();
+  const players = leaderboardFromRuns(data.runs || [], { since: weekStart });
+  return {
+    scope: 'weekly',
+    weekStart,
+    minScoreMs: CHASE_MIN_SCORE_MS,
+    podiums: weeklyPodiums(data.runs || []).slice(0, 12),
+    players: players
       .map(player => ({
         name: player.name,
         bestMs: Number(player.bestMs) || 0,
@@ -207,7 +302,7 @@ function publicChaseLeaderboard(data) {
       }))
       .sort((a, b) => b.bestMs - a.bestMs || a.name.localeCompare(b.name)),
     recentRuns: (data.runs || [])
-      .filter(run => !run.invalidated)
+      .filter(run => !run.invalidated && run.counted && Number(run.durationMs) >= CHASE_MIN_SCORE_MS && Number(run.at) >= weekStart)
       .slice(-12)
       .reverse()
       .map(run => ({
@@ -221,18 +316,7 @@ function publicChaseLeaderboard(data) {
 }
 
 function rebuildLeaderboardPlayers(data) {
-  const byPlayer = new Map();
-  (data.runs || []).forEach((run) => {
-    const name = cleanPlayerName(run.player);
-    if (!byPlayer.has(name)) byPlayer.set(name, { name, bestMs: 0, runs: 0, updatedAt: null });
-    const record = byPlayer.get(name);
-    record.runs += 1;
-    if (!run.invalidated && run.counted && Number(run.durationMs) > record.bestMs) {
-      record.bestMs = Number(run.durationMs) || 0;
-      record.updatedAt = run.at || Date.now();
-    }
-  });
-  data.players = [...byPlayer.values()];
+  data.players = leaderboardFromRuns(data.runs || []);
   return data;
 }
 
@@ -431,6 +515,13 @@ app.get('/api/chase-leaderboard', (_req, res) => {
   res.json({ leaderboard: publicChaseLeaderboard(loadChaseLeaderboard()) });
 });
 
+app.get('/api/profile', (req, res) => {
+  const user = authUser(req);
+  if (!user) return res.status(401).json({ error: 'login required' });
+  const data = loadChaseLeaderboard();
+  res.json({ ok: true, profile: profileFromLeaderboard(data, user), leaderboard: publicChaseLeaderboard(data) });
+});
+
 app.post('/api/chase-leaderboard/score', (req, res) => {
   const user = authUser(req);
   if (!user) return res.status(401).json({ error: 'login required' });
@@ -450,16 +541,7 @@ app.post('/api/chase-leaderboard/score', (req, res) => {
     at: now,
   };
   data.runs.push(run);
-  let record = data.players.find(item => item.name.toLowerCase() === player.toLowerCase());
-  if (!record) {
-    record = { name: player, bestMs: 0, runs: 0, updatedAt: now };
-    data.players.push(record);
-  }
-  record.runs = (Number(record.runs) || 0) + 1;
-  if (counted && durationMs > (Number(record.bestMs) || 0)) {
-    record.bestMs = durationMs;
-    record.updatedAt = now;
-  }
+  if (counted) rebuildLeaderboardPlayers(data);
   saveChaseLeaderboard(data);
   const leaderboard = publicChaseLeaderboard(data);
   io.emit('chase-leaderboard-updated', leaderboard);
