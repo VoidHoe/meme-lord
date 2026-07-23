@@ -543,15 +543,21 @@ function startHeldChase(event) {
   const stopAudio = startChaseAudio(seconds, event.action.music);
   const chaseSfx = startChaseSfx(event.action);
   const start = performance.now();
-  let raf = 0;
+  let tickTimer = 0;
+  let lastClockText = clock.textContent;
+  const showProgressBar = getComputedStyle(barWrap).display !== 'none';
 
   const tick = () => {
     const elapsed = (performance.now() - start) / 1000;
-    clock.textContent = formatChaseClock(elapsed);
-    bar.style.transform = `scaleX(${Math.min(1, elapsed / seconds)})`;
-    raf = requestAnimationFrame(tick);
+    const nextClockText = formatChaseClock(elapsed);
+    if (nextClockText !== lastClockText) {
+      clock.textContent = nextClockText;
+      lastClockText = nextClockText;
+    }
+    if (showProgressBar) bar.style.transform = `scaleX(${Math.min(1, elapsed / seconds)})`;
   };
-  raf = requestAnimationFrame(tick);
+  tickTimer = setInterval(tick, 33);
+  tick();
 
   activeChase = {
     id: event.action.id || null,
@@ -559,7 +565,7 @@ function startHeldChase(event) {
     stopAudio,
     stopSfx: chaseSfx.stop,
     endSfxUrl: chaseSfx.endUrl,
-    stopTimer: () => cancelAnimationFrame(raf),
+    stopTimer: () => clearInterval(tickTimer),
   };
 }
 

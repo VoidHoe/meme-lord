@@ -210,6 +210,7 @@ function createOverlayWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       autoplayPolicy: 'no-user-gesture-required',
+      backgroundThrottling: false,
     },
   });
 
