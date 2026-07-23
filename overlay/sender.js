@@ -565,27 +565,63 @@ function renderLeaderboardRows(container, players, { mode = 'chase', clickable =
     container.innerHTML = '<div class="leaderboard-empty">No scores yet.</div>';
     return;
   }
-  players.forEach((player, index) => {
-    const row = document.createElement('div');
-    row.className = `leaderboard-row${clickable ? ' clickable' : ''}`;
-    row.innerHTML = `<span class="leaderboard-rank"></span><span class="leaderboard-player"><span class="leaderboard-avatar"></span><span class="leaderboard-name"></span></span><strong></strong><small></small>`;
-    row.querySelector('.leaderboard-rank').textContent = `#${player.rank || index + 1}`;
+  const ranked = players.map((player, index) => ({ ...player, rank: player.rank || index + 1 }));
+  const top = ranked.slice(0, 3);
+  if (top.length) container.appendChild(renderLeaderboardPodium(top, { mode, clickable }));
+  const rest = ranked.slice(3);
+  if (rest.length) {
+    const list = document.createElement('div');
+    list.className = 'leaderboard-table';
+    rest.forEach((player) => list.appendChild(renderLeaderboardRow(player, { mode, clickable })));
+    container.appendChild(list);
+  }
+}
+
+function renderLeaderboardPodium(players, { mode, clickable }) {
+  const podium = document.createElement('div');
+  podium.className = 'leaderboard-podium';
+  [2, 1, 3].forEach((rank) => {
+    const player = players.find(item => Number(item.rank) === rank);
+    if (!player) return;
     const name = player.name || player.player || 'Player';
-    row.querySelector('.leaderboard-name').textContent = name;
-    setAvatar(row.querySelector('.leaderboard-avatar'), name, player.avatarUrl);
-    if (mode === 'lol') {
-      const gain = Math.floor(Number(player.gain) || 0);
-      const score = row.querySelector('strong');
-      score.textContent = `${gain > 0 ? '+' : ''}${gain} LP`;
-      score.className = gain > 0 ? 'lp-positive' : gain < 0 ? 'lp-negative' : 'lp-neutral';
-      row.querySelector('small').textContent = player.rankLabel || player.riotId || 'weekly';
-    } else {
-      row.querySelector('strong').textContent = player.bestMs ? formatChaseMs(player.bestMs) : '--:--.--';
-      row.querySelector('small').textContent = `${player.runs || 0} run${player.runs === 1 ? '' : 's'}`;
-    }
-    if (clickable) row.addEventListener('click', () => openPlayerProfile(name));
-    container.appendChild(row);
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = `podium-tile rank-${rank}`;
+    tile.disabled = !clickable;
+    tile.innerHTML = '<span class="podium-medal"></span><span class="leaderboard-avatar podium-avatar"></span><strong></strong><small class="podium-score"></small><small class="podium-meta"></small>';
+    tile.querySelector('.podium-medal').textContent = `#${rank}`;
+    setAvatar(tile.querySelector('.podium-avatar'), name, player.avatarUrl);
+    tile.querySelector('strong').textContent = name;
+    fillLeaderboardScore(tile.querySelector('.podium-score'), tile.querySelector('.podium-meta'), player, mode);
+    if (clickable) tile.addEventListener('click', () => openPlayerProfile(name));
+    podium.appendChild(tile);
   });
+  return podium;
+}
+
+function renderLeaderboardRow(player, { mode, clickable }) {
+  const row = document.createElement('div');
+  row.className = `leaderboard-row${clickable ? ' clickable' : ''}`;
+  row.innerHTML = `<span class="leaderboard-rank"></span><span class="leaderboard-player"><span class="leaderboard-avatar"></span><span class="leaderboard-name"></span></span><strong></strong><small></small>`;
+  row.querySelector('.leaderboard-rank').textContent = `#${player.rank}`;
+  const name = player.name || player.player || 'Player';
+  row.querySelector('.leaderboard-name').textContent = name;
+  setAvatar(row.querySelector('.leaderboard-avatar'), name, player.avatarUrl);
+  fillLeaderboardScore(row.querySelector('strong'), row.querySelector('small'), player, mode);
+  if (clickable) row.addEventListener('click', () => openPlayerProfile(name));
+  return row;
+}
+
+function fillLeaderboardScore(scoreEl, metaEl, player, mode) {
+  if (mode === 'lol') {
+    const gain = Math.floor(Number(player.gain) || 0);
+    scoreEl.textContent = `${gain > 0 ? '+' : ''}${gain} LP`;
+    scoreEl.className = gain > 0 ? 'lp-positive' : gain < 0 ? 'lp-negative' : 'lp-neutral';
+    metaEl.textContent = player.rankLabel || player.riotId || 'weekly';
+  } else {
+    scoreEl.textContent = player.bestMs ? formatChaseMs(player.bestMs) : '--:--.--';
+    metaEl.textContent = `${player.runs || 0} run${player.runs === 1 ? '' : 's'}`;
+  }
 }
 
 function setAvatar(element, name, avatarUrl) {
