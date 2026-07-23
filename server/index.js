@@ -461,14 +461,12 @@ async function fetchRiotRank({ gameName, tagLine, region }) {
   const platform = cleanRiotRegion(region);
   const accountRegion = RIOT_ACCOUNT_REGIONS[platform] || 'europe';
   const account = await riotFetchJson(`https://${accountRegion}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`);
-  const summoner = await riotFetchJson(`https://${platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${encodeURIComponent(account.puuid)}`);
-  const entries = await riotFetchJson(`https://${platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/${encodeURIComponent(summoner.id)}`);
+  const entries = await riotFetchJson(`https://${platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/${encodeURIComponent(account.puuid)}`);
   const solo = (entries || []).find(entry => entry.queueType === 'RANKED_SOLO_5x5') || null;
   const currentLp = rankedLpValue(solo);
   return {
     accountRegion,
     puuid: account.puuid,
-    summonerId: summoner.id,
     queue: 'RANKED_SOLO_5x5',
     currentLp,
     rankLabel: solo ? `${solo.tier} ${solo.rank} ${solo.leaguePoints} LP` : 'Unranked',
