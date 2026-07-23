@@ -96,6 +96,15 @@ const chaseStatus = $('chase-status');
 const chaseLeaderboardScope = $('chase-leaderboard-scope');
 const chaseLeaderboardNote = $('chase-leaderboard-note');
 const chaseLeaderboard = $('chase-leaderboard');
+const profileAvatar = $('profile-avatar');
+const profileAvatarChange = $('profile-avatar-change');
+const lolGameName = $('lol-game-name');
+const lolTagLine = $('lol-tag-line');
+const lolRegion = $('lol-region');
+const lolLink = $('lol-link');
+const lolRefresh = $('lol-refresh');
+const lolStatus = $('lol-status');
+const lolLeaderboard = $('lol-leaderboard');
 const facecamEnabled = $('facecam-enabled');
 const facecamHotkey = $('facecam-hotkey');
 const facecamModeBtns = [...document.querySelectorAll('[data-facecam-mode]')];
@@ -110,6 +119,7 @@ const facecamPosX = $('facecam-pos-x');
 const facecamPosY = $('facecam-pos-y');
 let facecamPlacement = { x: 78, y: 8 };
 let facecamTriggerMode = 'hold';
+let profileViewUsername = '';
 
 const PANELS = {
   compose: 'compose-panel',
@@ -117,6 +127,7 @@ const PANELS = {
   history: 'history-panel',
   chase: 'chase-panel',
   facecam: 'facecam-panel',
+  league: 'league-panel',
   profile: 'profile-panel',
   settings: 'settings-panel',
 };
@@ -129,7 +140,8 @@ function showTab(name) {
   if (name === 'history') loadHistory();
   if (name === 'chase') window.sender.getSettings().then(loadChaseSettings);
   if (name === 'facecam') window.sender.getSettings().then(loadFacecamSettings);
-  if (name === 'profile') loadProfile();
+  if (name === 'league') loadLolLeaderboard();
+  if (name === 'profile') loadProfile(profileViewUsername);
   if (name === 'settings') loadSettingsForm();
 }
 
@@ -144,7 +156,10 @@ function setAuthLocked(locked) {
   }
 }
 
-document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => showTab(tab.dataset.tab)));
+document.querySelectorAll('.tab').forEach((tab) => tab.addEventListener('click', () => {
+  if (tab.dataset.tab === 'profile') profileViewUsername = '';
+  showTab(tab.dataset.tab);
+}));
 if (window.sender.onShowTab) window.sender.onShowTab((tab) => showTab(tab));
 
 $('close-btn').addEventListener('click', () => window.sender.close());
@@ -244,6 +259,9 @@ chaseModeBtns.forEach((button) => {
     saveChaseSettings();
   });
 });
+profileAvatarChange.addEventListener('click', changeProfileAvatar);
+lolLink.addEventListener('click', linkLolAccount);
+lolRefresh.addEventListener('click', refreshLolAccount);
 
 function loadChaseSettings(settings) {
   chaseEnabled.checked = !!settings.chaseEnabled;
@@ -342,8 +360,8 @@ function renderChasePlaylistControls() {
   chasePlaylistDelete.disabled = !chasePlaylistFilter.value;
 }
 
-function playlistForTrack(trackId) {
-  return chaseMusicPlaylists.find(playlist => (playlist.trackIds || []).includes(trackId)) || null;
+function playlistsForTrack(trackId) {
+  return chaseMusicPlaylists.filter(playlist => (playlist.trackIds || []).includes(trackId));
 }
 
 function visibleChaseTracks() {
@@ -371,7 +389,7 @@ function renderChaseMusicPicker() {
     ...visibleTracks.map(track => ({
       id: track.id,
       name: track.name || 'Imported track',
-      meta: playlistForTrack(track.id)?.name || (track.uploadedAt ? new Date(track.uploadedAt).toLocaleDateString() : 'No playlist'),
+      meta: playlistsForTrack(track.id).map(playlist => playlist.name).join(', ') || (track.uploadedAt ? new Date(track.uploadedAt).toLocaleDateString() : 'No playlist'),
       removable: true,
       track,
     })),
@@ -397,25 +415,28 @@ function renderChaseMusicPicker() {
       saveChaseSettings();
     });
     if (row.removable) {
-      const playlist = document.createElement('select');
-      playlist.className = 'music-picker-playlist';
-      const none = document.createElement('option');
-      none.value = '';
-      none.textContent = 'No playlist';
-      playlist.appendChild(none);
-      chaseMusicPlaylists.forEach((item) => {
-        const option = document.createElement('option');
-        option.value = item.id;
-        option.textContent = item.name;
-        playlist.appendChild(option);
+      const memberships = document.createElement('span');
+      memberships.className = 'music-picker-playlists';
+      if (!chaseMusicPlaylists.length) {
+        const empty = document.createElement('small');
+        empty.textContent = 'No playlists';
+        memberships.appendChild(empty);
+      }
+      chaseMusicPlaylists.forEach((playlist) => {
+        const label = document.createElement('label');
+        label.className = 'playlist-check';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = (playlist.trackIds || []).includes(row.track.id);
+        checkbox.addEventListener('click', (event) => event.stopPropagation());
+        checkbox.addEventListener('change', (event) => {
+          event.stopPropagation();
+          setChaseMusicPlaylist(row.track, playlist.id, checkbox.checked);
+        });
+        label.append(checkbox, document.createTextNode(playlist.name));
+        memberships.appendChild(label);
       });
-      playlist.value = playlistForTrack(row.track.id)?.id || '';
-      playlist.addEventListener('click', (event) => event.stopPropagation());
-      playlist.addEventListener('change', (event) => {
-        event.stopPropagation();
-        moveChaseMusicToPlaylist(row.track, playlist.value);
-      });
-      item.appendChild(playlist);
+      item.appendChild(memberships);
       const remove = document.createElement('span');
       remove.className = 'music-picker-remove';
       remove.textContent = 'Remove';
@@ -491,18 +512,18 @@ async function deleteSelectedChasePlaylist() {
   }
 }
 
-async function moveChaseMusicToPlaylist(track, playlistId) {
+async function setChaseMusicPlaylist(track, playlistId, enabled) {
   if (!track?.id) return;
   try {
-    const result = await window.sender.moveChaseMusicToPlaylist(track.id, playlistId);
+    const result = await window.sender.setChaseMusicPlaylist(track.id, playlistId, enabled);
     if (!result.ok) throw new Error(result.error || 'Server error');
     chaseMusicLibrary = Array.isArray(result.library?.music) ? result.library.music : [];
     chaseMusicPlaylists = Array.isArray(result.library?.playlists) ? result.library.playlists : [];
     renderChaseMusicLibrary(chaseMusicSelect.value);
     saveChaseSettings();
-    setChaseStatus(playlistId ? 'Song moved to playlist' : 'Song removed from playlist', 'ok');
+    setChaseStatus(enabled ? 'Song added to playlist' : 'Song removed from playlist', 'ok');
   } catch (error) {
-    setChaseStatus(`Could not move song: ${error.message}`, 'err');
+    setChaseStatus(`Could not update playlist: ${error.message}`, 'err');
   }
 }
 
@@ -531,28 +552,14 @@ async function loadChaseLeaderboard() {
 function renderChaseLeaderboard(board) {
   chaseLeaderboardScope.textContent = board?.scope === 'weekly' ? 'Weekly' : 'Weekly';
   const players = board?.players || [];
-  chaseLeaderboard.innerHTML = '';
   if (!board) {
     chaseLeaderboard.innerHTML = '<div class="leaderboard-empty">No leaderboard loaded yet.</div>';
     return;
   }
-  if (!players.length) {
-    chaseLeaderboard.innerHTML = '<div class="leaderboard-empty">No scores yet.</div>';
-    return;
-  }
-  players.forEach((player, index) => {
-    const row = document.createElement('div');
-    row.className = 'leaderboard-row';
-    row.innerHTML = `<span class="leaderboard-rank"></span><span class="leaderboard-name"></span><strong></strong><small></small>`;
-    row.querySelector('.leaderboard-rank').textContent = `#${index + 1}`;
-    row.querySelector('.leaderboard-name').textContent = player.name || 'Player';
-    row.querySelector('strong').textContent = player.bestMs ? formatChaseMs(player.bestMs) : '--:--.--';
-    row.querySelector('small').textContent = `${player.runs || 0} run${player.runs === 1 ? '' : 's'}`;
-    chaseLeaderboard.appendChild(row);
-  });
+  renderLeaderboardRows(chaseLeaderboard, players, { mode: 'chase' });
 }
 
-function renderLeaderboardRows(container, players) {
+function renderLeaderboardRows(container, players, { mode = 'chase', clickable = true } = {}) {
   container.innerHTML = '';
   if (!players?.length) {
     container.innerHTML = '<div class="leaderboard-empty">No scores yet.</div>';
@@ -560,14 +567,37 @@ function renderLeaderboardRows(container, players) {
   }
   players.forEach((player, index) => {
     const row = document.createElement('div');
-    row.className = 'leaderboard-row';
-    row.innerHTML = `<span class="leaderboard-rank"></span><span class="leaderboard-name"></span><strong></strong><small></small>`;
+    row.className = `leaderboard-row${clickable ? ' clickable' : ''}`;
+    row.innerHTML = `<span class="leaderboard-rank"></span><span class="leaderboard-player"><span class="leaderboard-avatar"></span><span class="leaderboard-name"></span></span><strong></strong><small></small>`;
     row.querySelector('.leaderboard-rank').textContent = `#${player.rank || index + 1}`;
-    row.querySelector('.leaderboard-name').textContent = player.name || 'Player';
-    row.querySelector('strong').textContent = player.bestMs ? formatChaseMs(player.bestMs) : '--:--.--';
-    row.querySelector('small').textContent = `${player.runs || 0} run${player.runs === 1 ? '' : 's'}`;
+    const name = player.name || player.player || 'Player';
+    row.querySelector('.leaderboard-name').textContent = name;
+    setAvatar(row.querySelector('.leaderboard-avatar'), name, player.avatarUrl);
+    if (mode === 'lol') {
+      const gain = Math.floor(Number(player.gain) || 0);
+      const score = row.querySelector('strong');
+      score.textContent = `${gain > 0 ? '+' : ''}${gain} LP`;
+      score.className = gain > 0 ? 'lp-positive' : gain < 0 ? 'lp-negative' : 'lp-neutral';
+      row.querySelector('small').textContent = player.rankLabel || player.riotId || 'weekly';
+    } else {
+      row.querySelector('strong').textContent = player.bestMs ? formatChaseMs(player.bestMs) : '--:--.--';
+      row.querySelector('small').textContent = `${player.runs || 0} run${player.runs === 1 ? '' : 's'}`;
+    }
+    if (clickable) row.addEventListener('click', () => openPlayerProfile(name));
     container.appendChild(row);
   });
+}
+
+function setAvatar(element, name, avatarUrl) {
+  if (!element) return;
+  element.textContent = '';
+  element.style.backgroundImage = '';
+  element.classList.toggle('has-image', !!avatarUrl);
+  if (avatarUrl) {
+    element.style.backgroundImage = `url("${avatarUrl}")`;
+  } else {
+    element.textContent = (name || '?').slice(0, 1).toUpperCase();
+  }
 }
 
 function renderChaseLeaderboardNote() {
@@ -589,16 +619,17 @@ function formatChaseMs(ms) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(centis).padStart(2, '0')}`;
 }
 
-async function loadProfile() {
+async function loadProfile(username = '') {
   const boardEl = $('profile-leaderboard');
   const badgesEl = $('profile-badges');
   boardEl.innerHTML = '<div class="leaderboard-empty">Loading profile...</div>';
   badgesEl.innerHTML = '<div class="leaderboard-empty">Loading badges...</div>';
-  const result = await window.sender.getProfile();
+  const result = username ? await window.sender.getPublicProfile(username) : await window.sender.getProfile();
   if (!result.ok) {
     $('profile-name').textContent = 'Not logged in';
     $('profile-rank').textContent = result.error || 'Profile unavailable';
-    $('profile-avatar').textContent = '?';
+    setAvatar(profileAvatar, '?', null);
+    profileAvatarChange.style.display = username ? 'none' : '';
     $('profile-weekly-best').textContent = '--:--.--';
     $('profile-weekly-runs').textContent = '0';
     $('profile-alltime-best').textContent = '--:--.--';
@@ -611,13 +642,90 @@ async function loadProfile() {
   const stats = profile.stats || {};
   const name = user.username || 'Player';
   $('profile-name').textContent = name;
-  $('profile-avatar').textContent = name.slice(0, 1).toUpperCase();
+  setAvatar(profileAvatar, name, user.avatarUrl);
+  profileAvatarChange.style.display = username ? 'none' : '';
   $('profile-rank').textContent = stats.currentWeekRank ? `Weekly rank #${stats.currentWeekRank}` : 'No weekly rank yet';
   $('profile-weekly-best').textContent = stats.weeklyBestMs ? formatChaseMs(stats.weeklyBestMs) : '--:--.--';
   $('profile-weekly-runs').textContent = String(stats.weeklyRuns || 0);
   $('profile-alltime-best').textContent = stats.allTimeBestMs ? formatChaseMs(stats.allTimeBestMs) : '--:--.--';
-  renderLeaderboardRows(boardEl, result.leaderboard?.players || []);
+  renderLeaderboardRows(boardEl, result.leaderboard?.players || [], { mode: 'chase' });
   renderBadges(profile.badges || []);
+}
+
+function openPlayerProfile(username) {
+  profileViewUsername = username || '';
+  showTab('profile');
+}
+
+async function changeProfileAvatar() {
+  profileAvatarChange.disabled = true;
+  profileAvatarChange.textContent = 'Uploading...';
+  try {
+    const result = await window.sender.chooseProfileAvatar();
+    if (result?.canceled) return;
+    if (!result?.ok) throw new Error(result?.error || 'Upload failed');
+    await loadProfile();
+  } catch (error) {
+    $('profile-rank').textContent = `Could not update picture: ${error.message}`;
+  } finally {
+    profileAvatarChange.disabled = false;
+    profileAvatarChange.textContent = 'Change picture';
+  }
+}
+
+async function loadLolLeaderboard() {
+  lolLeaderboard.innerHTML = '<div class="leaderboard-empty">Loading LP board...</div>';
+  const [account, result] = await Promise.all([
+    window.sender.getLolAccount ? window.sender.getLolAccount() : Promise.resolve({ ok: false }),
+    window.sender.getLolLeaderboard(),
+  ]);
+  if (account?.riot) {
+    lolGameName.value = account.riot.gameName || '';
+    lolTagLine.value = account.riot.tagLine || '';
+    lolRegion.value = account.riot.region || 'euw1';
+    lolStatus.textContent = `${account.riot.label || 'Riot account'} linked${account.riot.rankLabel ? ` · ${account.riot.rankLabel}` : ''}.`;
+  }
+  if (!result.leaderboard) {
+    lolLeaderboard.innerHTML = '<div class="leaderboard-empty">No League board loaded yet.</div>';
+    lolStatus.textContent = result.error || 'Could not reach the League leaderboard.';
+    return;
+  }
+  renderLeaderboardRows(lolLeaderboard, result.leaderboard.players || [], { mode: 'lol' });
+}
+
+async function linkLolAccount() {
+  const payload = {
+    gameName: lolGameName.value.trim(),
+    tagLine: lolTagLine.value.trim().replace(/^#/, ''),
+    region: lolRegion.value,
+  };
+  lolLink.disabled = true;
+  lolStatus.textContent = 'Linking Riot account...';
+  try {
+    const result = await window.sender.linkLolAccount(payload);
+    if (!result.ok) throw new Error(result.error || 'Server error');
+    renderLeaderboardRows(lolLeaderboard, result.leaderboard?.players || [], { mode: 'lol' });
+    lolStatus.textContent = `${result.riot?.label || 'Riot account'} linked${result.riot?.rankLabel ? ` · ${result.riot.rankLabel}` : ''}.`;
+  } catch (error) {
+    lolStatus.textContent = `Could not link Riot account: ${error.message}`;
+  } finally {
+    lolLink.disabled = false;
+  }
+}
+
+async function refreshLolAccount() {
+  lolRefresh.disabled = true;
+  lolStatus.textContent = 'Refreshing Riot rank...';
+  try {
+    const result = await window.sender.refreshLolAccount();
+    if (!result.ok) throw new Error(result.error || 'Server error');
+    renderLeaderboardRows(lolLeaderboard, result.leaderboard?.players || [], { mode: 'lol' });
+    lolStatus.textContent = `${result.riot?.rankLabel || 'Rank refreshed'} · leaderboard updated.`;
+  } catch (error) {
+    lolStatus.textContent = `Could not refresh rank: ${error.message}`;
+  } finally {
+    lolRefresh.disabled = false;
+  }
 }
 
 function renderBadges(badges) {

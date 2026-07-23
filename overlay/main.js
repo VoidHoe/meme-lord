@@ -77,6 +77,13 @@ const AUDIO_MIME = {
   '.wav': 'audio/wav',
   '.webm': 'audio/webm',
 };
+const IMAGE_MIME = {
+  '.gif': 'image/gif',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+};
 const uploadedChaseAudio = new Map();
 
 // The server deletes uploaded media after 5 min (see /api/upload-media). Cache each
@@ -680,6 +687,18 @@ async function fetchChaseAudioLibrary() {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || `library failed: ${res.status}`);
   return data;
+}
+
+async function uploadProfileAvatar(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  return authRequest('/api/profile/avatar', {
+    method: 'POST',
+    headers: {
+      'Content-Type': IMAGE_MIME[ext] || 'image/jpeg',
+      'X-File-Name': path.basename(filePath),
+    },
+    body: fs.readFileSync(filePath),
+  });
 }
 
 async function authRequest(pathname, options = {}) {
@@ -1302,12 +1321,12 @@ ipcMain.handle('delete-chase-playlist', async (_event, id) => {
   return { ok: true, library: body.library || { music: [], playlists: [] } };
 });
 
-ipcMain.handle('move-chase-music-to-playlist', async (_event, { trackId, playlistId }) => {
+ipcMain.handle('set-chase-music-playlist', async (_event, { trackId, playlistId, enabled }) => {
   const serverUrl = store.get('serverUrl') || DEFAULT_SERVER;
   const res = await fetch(`${serverUrl}/api/chase-audio/music/${encodeURIComponent(trackId)}/playlist`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ playlistId }),
+    body: JSON.stringify({ playlistId, enabled }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) return { ok: false, error: body.error || `HTTP ${res.status}` };
@@ -1383,6 +1402,83 @@ ipcMain.handle('get-chase-leaderboard', async () => {
 ipcMain.handle('get-profile', async () => {
   try {
     return await authRequest('/api/profile');
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('get-public-profile', async (_event, username) => {
+  try {
+    return await authRequest(`/api/profile/${encodeURIComponent(username || '')}`);
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('choose-profile-avatar', async () => {
+  try {
+    const result = await dialog.showOpenDialog(senderWindow || undefined, {
+      title: 'Choose profile picture',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { canceled: true };
+    const uploaded = await uploadProfileAvatar(result.filePaths[0]);
+    if (uploaded.user) {
+      store.set('authUser', uploaded.user);
+      if (uploaded.user.username) store.set('discordUsername', uploaded.user.username);
+    }
+    return uploaded;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('get-lol-leaderboard', async () => {
+  try {
+    const result = await authRequest('/api/lol-leaderboard');
+    return { leaderboard: result.leaderboard };
+  } catch (err) {
+    return { leaderboard: null, error: err.message };
+  }
+});
+
+ipcMain.handle('get-lol-account', async () => {
+  try {
+    return await authRequest('/api/lol-account');
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('link-lol-account', async (_event, payload) => {
+  try {
+    return await authRequest('/api/lol-account/link', {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('refresh-lol-account', async () => {
+  try {
+    return await authRequest('/api/lol-account/refresh', { method: 'POST' });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('submit-lol-score', async (_event, gain) => {
+  try {
+    return await authRequest('/api/lol-leaderboard/score', {
+      method: 'POST',
+      body: JSON.stringify({ gain }),
+    });
   } catch (err) {
     return { ok: false, error: err.message };
   }

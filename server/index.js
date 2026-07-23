@@ -16,15 +16,50 @@ const io = new Server(server, { cors: { origin: '*' } });
 const persistentRoot = process.env.PERSISTENT_DATA_DIR || '/data';
 const tempAudioDir = path.join(__dirname, 'audio_cache');
 const persistentAudioDir = path.join(persistentRoot, 'audio_cache');
+const profileAvatarDir = path.join(persistentRoot, 'profile_avatars');
 const chaseLibraryFile = path.join(persistentRoot, 'chase-audio-library.json');
 const chaseLeaderboardFile = path.join(persistentRoot, 'chase-leaderboard.json');
+const lolLeaderboardFile = path.join(persistentRoot, 'lol-leaderboard.json');
 const authUsersFile = path.join(persistentRoot, 'auth-users.json');
 const authSecretFile = path.join(persistentRoot, 'auth-secret.txt');
 const CHASE_MIN_SCORE_MS = 30 * 1000;
+const RIOT_REFRESH_MS = 15 * 60 * 1000;
+const RIOT_PLATFORM_REGIONS = new Set(['br1', 'eun1', 'euw1', 'jp1', 'kr', 'la1', 'la2', 'me1', 'na1', 'oc1', 'ru', 'sg2', 'tr1', 'tw2', 'vn2']);
+const RIOT_ACCOUNT_REGIONS = {
+  br1: 'americas',
+  la1: 'americas',
+  la2: 'americas',
+  na1: 'americas',
+  oc1: 'americas',
+  kr: 'asia',
+  jp1: 'asia',
+  eun1: 'europe',
+  euw1: 'europe',
+  me1: 'europe',
+  ru: 'europe',
+  tr1: 'europe',
+  sg2: 'asia',
+  tw2: 'asia',
+  vn2: 'asia',
+};
+const RIOT_TIER_SCORE = {
+  IRON: 0,
+  BRONZE: 400,
+  SILVER: 800,
+  GOLD: 1200,
+  PLATINUM: 1600,
+  EMERALD: 2000,
+  DIAMOND: 2400,
+  MASTER: 2800,
+  GRANDMASTER: 3000,
+  CHALLENGER: 3200,
+};
+const RIOT_DIVISION_SCORE = { IV: 0, III: 100, II: 200, I: 300 };
 
 // Servir les fichiers audio et media proxiés
 app.use('/audio', express.static(tempAudioDir));
 app.use('/audio', express.static(persistentAudioDir));
+app.use('/avatars', express.static(profileAvatarDir));
 app.use('/media', express.static(path.join(__dirname, 'media_cache')));
 
 // Page mobile "Quick Drop" (envoyer depuis le téléphone)
@@ -60,6 +95,16 @@ function audioExt(original, mime) {
     : mime.includes('wav') ? 'wav'
     : mime.includes('mp4') ? 'm4a'
     : 'mp3';
+}
+
+function imageExt(original, mime) {
+  const originalExt = path.extname(path.basename(original || '')).toLowerCase().replace('.', '');
+  return ['gif', 'jpg', 'jpeg', 'png', 'webp'].includes(originalExt)
+    ? (originalExt === 'jpeg' ? 'jpg' : originalExt)
+    : mime.includes('gif') ? 'gif'
+    : mime.includes('png') ? 'png'
+    : mime.includes('webp') ? 'webp'
+    : 'jpg';
 }
 
 function cleanAudioName(name, fallback = 'Audio') {
@@ -121,6 +166,12 @@ function loadAuthUsers() {
   }
 }
 
+function findStoredUser(username) {
+  const clean = cleanUsername(username).toLowerCase();
+  if (!clean) return null;
+  return loadAuthUsers().users.find(item => item.username.toLowerCase() === clean) || null;
+}
+
 function saveAuthUsers(data) {
   fs.mkdirSync(persistentRoot, { recursive: true });
   fs.writeFileSync(authUsersFile, JSON.stringify(data, null, 2));
@@ -128,6 +179,15 @@ function saveAuthUsers(data) {
 
 function cleanUsername(name) {
   return String(name || '').replace(/[^\w .()[\]-]+/g, '').trim().slice(0, 32);
+}
+
+function cleanRiotPart(value, max = 32) {
+  return String(value || '').replace(/[^\p{L}\p{N} _.-]+/gu, '').trim().slice(0, max);
+}
+
+function cleanRiotRegion(value) {
+  const region = String(value || 'euw1').toLowerCase();
+  return RIOT_PLATFORM_REGIONS.has(region) ? region : 'euw1';
 }
 
 function adminUsers() {
@@ -162,9 +222,9 @@ function verifyAuthToken(token) {
     if (actualBuffer.length !== expectedBuffer.length) return null;
     if (!crypto.timingSafeEqual(actualBuffer, expectedBuffer)) return null;
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    const user = loadAuthUsers().users.find(item => item.username.toLowerCase() === String(parsed.sub || '').toLowerCase());
+    const user = findStoredUser(parsed.sub);
     if (!user) return null;
-    return { username: user.username, role: user.role || 'user' };
+    return publicAuthUser(user);
   } catch {
     return null;
   }
@@ -176,7 +236,7 @@ function authUser(req) {
 }
 
 function publicAuthUser(user) {
-  return user ? { username: user.username, role: user.role || 'user' } : null;
+  return user ? { username: user.username, role: user.role || 'user', avatarUrl: user.avatarUrl || null } : null;
 }
 
 function loadChaseLeaderboard() {
@@ -227,6 +287,19 @@ function leaderboardFromRuns(runs, { since = 0 } = {}) {
   return [...byPlayer.values()];
 }
 
+function avatarLookup() {
+  const users = loadAuthUsers().users || [];
+  return new Map(users.map(user => [cleanPlayerName(user.username).toLowerCase(), user.avatarUrl || null]));
+}
+
+function withPlayerAvatars(players) {
+  const avatars = avatarLookup();
+  return (players || []).map(player => ({
+    ...player,
+    avatarUrl: avatars.get(cleanPlayerName(player.name).toLowerCase()) || player.avatarUrl || null,
+  }));
+}
+
 function weeklyPodiums(runs) {
   const byWeek = new Map();
   (runs || []).forEach((run) => {
@@ -240,7 +313,7 @@ function weeklyPodiums(runs) {
     .map(([weekStart, weekRuns]) => ({
       weekStart,
       label: weekLabel(weekStart),
-      players: leaderboardFromRuns(weekRuns)
+      players: withPlayerAvatars(leaderboardFromRuns(weekRuns))
         .sort((a, b) => b.bestMs - a.bestMs || a.name.localeCompare(b.name))
         .slice(0, 3)
         .map((player, index) => ({ ...player, rank: index + 1 })),
@@ -288,14 +361,16 @@ function profileFromLeaderboard(data, user) {
 function publicChaseLeaderboard(data) {
   const weekStart = startOfWeekMs();
   const players = leaderboardFromRuns(data.runs || [], { since: weekStart });
+  const avatars = avatarLookup();
   return {
     scope: 'weekly',
     weekStart,
     minScoreMs: CHASE_MIN_SCORE_MS,
     podiums: weeklyPodiums(data.runs || []).slice(0, 12),
-    players: players
+    players: withPlayerAvatars(players)
       .map(player => ({
         name: player.name,
+        avatarUrl: player.avatarUrl || null,
         bestMs: Number(player.bestMs) || 0,
         runs: Number(player.runs) || 0,
         updatedAt: player.updatedAt || null,
@@ -308,11 +383,162 @@ function publicChaseLeaderboard(data) {
       .map(run => ({
         id: run.id,
         player: run.player,
+        avatarUrl: avatars.get(cleanPlayerName(run.player).toLowerCase()) || null,
         durationMs: Number(run.durationMs) || 0,
         counted: !!run.counted,
         at: run.at,
       })),
   };
+}
+
+function loadLolLeaderboard() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(lolLeaderboardFile, 'utf8'));
+    return { scores: Array.isArray(parsed.scores) ? parsed.scores : [] };
+  } catch {
+    return { scores: [] };
+  }
+}
+
+function saveLolLeaderboard(data) {
+  fs.mkdirSync(persistentRoot, { recursive: true });
+  fs.writeFileSync(lolLeaderboardFile, JSON.stringify(data, null, 2));
+}
+
+function rankedLpValue(entry) {
+  if (!entry) return null;
+  const tier = String(entry.tier || '').toUpperCase();
+  const rank = String(entry.rank || '').toUpperCase();
+  if (!Object.prototype.hasOwnProperty.call(RIOT_TIER_SCORE, tier)) return null;
+  const division = ['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(tier) ? 0 : RIOT_DIVISION_SCORE[rank] ?? 0;
+  return RIOT_TIER_SCORE[tier] + division + Math.floor(Number(entry.leaguePoints) || 0);
+}
+
+function publicRiotLink(user) {
+  const riot = user?.riot || null;
+  if (!riot?.gameName || !riot?.tagLine) return null;
+  return {
+    gameName: riot.gameName,
+    tagLine: riot.tagLine,
+    region: riot.region || 'euw1',
+    label: `${riot.gameName}#${riot.tagLine}`,
+    queue: riot.queue || 'RANKED_SOLO_5x5',
+    rankLabel: riot.rankLabel || null,
+    lastSyncedAt: riot.lastSyncedAt || null,
+  };
+}
+
+function publicLolLeaderboard(data) {
+  const weekStart = startOfWeekMs();
+  const avatars = avatarLookup();
+  const players = (data.scores || [])
+    .filter(score => Number(score.weekStart) === weekStart)
+    .map(score => ({
+      name: cleanPlayerName(score.player),
+      avatarUrl: avatars.get(cleanPlayerName(score.player).toLowerCase()) || null,
+      gain: Math.floor(Number(score.gain) || 0),
+      baselineLp: Number(score.baselineLp) || null,
+      currentLp: Number(score.currentLp) || null,
+      rankLabel: score.rankLabel || null,
+      riotId: score.riotId || null,
+      updatedAt: score.updatedAt || null,
+    }))
+    .sort((a, b) => b.gain - a.gain || a.name.localeCompare(b.name))
+    .map((score, index) => ({ ...score, rank: index + 1 }));
+  return { scope: 'weekly', weekStart, players };
+}
+
+async function riotFetchJson(url) {
+  const apiKey = process.env.RIOT_API_KEY || '';
+  if (!apiKey) throw new Error('RIOT_API_KEY is missing on the server');
+  const res = await fetch(url, { headers: { 'X-Riot-Token': apiKey } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.status?.message || `Riot API ${res.status}`);
+  return data;
+}
+
+async function fetchRiotRank({ gameName, tagLine, region }) {
+  const platform = cleanRiotRegion(region);
+  const accountRegion = RIOT_ACCOUNT_REGIONS[platform] || 'europe';
+  const account = await riotFetchJson(`https://${accountRegion}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`);
+  const summoner = await riotFetchJson(`https://${platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${encodeURIComponent(account.puuid)}`);
+  const entries = await riotFetchJson(`https://${platform}.api.riotgames.com/lol/league/v4/entries/by-summoner/${encodeURIComponent(summoner.id)}`);
+  const solo = (entries || []).find(entry => entry.queueType === 'RANKED_SOLO_5x5') || null;
+  const currentLp = rankedLpValue(solo);
+  return {
+    accountRegion,
+    puuid: account.puuid,
+    summonerId: summoner.id,
+    queue: 'RANKED_SOLO_5x5',
+    currentLp,
+    rankLabel: solo ? `${solo.tier} ${solo.rank} ${solo.leaguePoints} LP` : 'Unranked',
+  };
+}
+
+async function syncLolScoreForUser(storedUser, { force = false } = {}) {
+  if (!storedUser?.riot?.gameName || !storedUser?.riot?.tagLine) return null;
+  if (!force && storedUser.riot.lastSyncedAt && Date.now() - Number(storedUser.riot.lastSyncedAt) < RIOT_REFRESH_MS) return null;
+  const rank = await fetchRiotRank(storedUser.riot);
+  storedUser.riot = { ...storedUser.riot, ...rank, lastSyncedAt: Date.now() };
+  const currentLp = Number(rank.currentLp);
+  if (!Number.isFinite(currentLp)) return { unranked: true, rank };
+  const board = loadLolLeaderboard();
+  const weekStart = startOfWeekMs();
+  const player = cleanPlayerName(storedUser.username);
+  board.scores = Array.isArray(board.scores) ? board.scores : [];
+  let score = board.scores.find(item => Number(item.weekStart) === weekStart && cleanPlayerName(item.player).toLowerCase() === player.toLowerCase());
+  if (!score) {
+    score = {
+      id: `lol-${weekStart}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      player,
+      weekStart,
+      baselineLp: currentLp,
+      currentLp,
+      gain: 0,
+      riotId: `${storedUser.riot.gameName}#${storedUser.riot.tagLine}`,
+      rankLabel: rank.rankLabel,
+      updatedAt: Date.now(),
+    };
+    board.scores.push(score);
+  } else {
+    if (!Number.isFinite(Number(score.baselineLp))) score.baselineLp = currentLp;
+    score.currentLp = currentLp;
+    score.gain = currentLp - Number(score.baselineLp);
+    score.riotId = `${storedUser.riot.gameName}#${storedUser.riot.tagLine}`;
+    score.rankLabel = rank.rankLabel;
+    score.updatedAt = Date.now();
+  }
+  saveLolLeaderboard(board);
+  return { score, rank };
+}
+
+async function refreshLinkedRiotScores({ force = false } = {}) {
+  const data = loadAuthUsers();
+  let changed = false;
+  for (const user of data.users || []) {
+    if (!user.riot?.gameName || !user.riot?.tagLine) continue;
+    try {
+      const result = await syncLolScoreForUser(user, { force });
+      if (result) changed = true;
+    } catch (err) {
+      user.riot.lastError = err.message;
+      user.riot.lastErrorAt = Date.now();
+      changed = true;
+    }
+  }
+  if (changed) saveAuthUsers(data);
+  return publicLolLeaderboard(loadLolLeaderboard());
+}
+
+function saveProfileAvatar(req, user) {
+  const mime = req.get('Content-Type') || '';
+  if (!/^image\/(png|jpe?g|webp|gif)$/i.test(mime)) throw new Error('image must be PNG, JPG, WEBP or GIF');
+  if (!Buffer.isBuffer(req.body) || req.body.length < 16) throw new Error('image file is empty');
+  const ext = imageExt(req.get('X-File-Name') || '', mime);
+  fs.mkdirSync(profileAvatarDir, { recursive: true });
+  const filename = `${cleanUsername(user.username).replace(/\s+/g, '-')}-${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
+  fs.writeFileSync(path.join(profileAvatarDir, filename), req.body);
+  return `${publicUrl(req)}/avatars/${filename}`;
 }
 
 function rebuildLeaderboardPlayers(data) {
@@ -449,18 +675,15 @@ app.put('/api/chase-audio/music/:id/playlist', (req, res) => {
   const library = loadChaseLibrary();
   const track = library.music.find(entry => entry.id === req.params.id);
   if (!track) return res.status(404).json({ error: 'music not found' });
+  library.playlists = Array.isArray(library.playlists) ? library.playlists : [];
   const playlistId = String(req.body?.playlistId || '');
-  if (playlistId && !library.playlists.some(playlist => playlist.id === playlistId)) {
-    return res.status(404).json({ error: 'playlist not found' });
-  }
-  library.playlists = library.playlists.map(playlist => ({
-    ...playlist,
-    trackIds: (playlist.trackIds || []).filter(trackId => trackId !== track.id),
-  }));
-  if (playlistId) {
-    const playlist = library.playlists.find(item => item.id === playlistId);
-    playlist.trackIds.push(track.id);
-  }
+  const playlist = library.playlists.find(item => item.id === playlistId);
+  if (!playlist) return res.status(404).json({ error: 'playlist not found' });
+  const enabled = req.body?.enabled !== false;
+  const ids = new Set(Array.isArray(playlist.trackIds) ? playlist.trackIds.map(String) : []);
+  if (enabled) ids.add(track.id);
+  else ids.delete(track.id);
+  playlist.trackIds = [...ids];
   saveChaseLibrary(library);
   res.json({ ok: true, library });
 });
@@ -522,6 +745,30 @@ app.get('/api/profile', (req, res) => {
   res.json({ ok: true, profile: profileFromLeaderboard(data, user), leaderboard: publicChaseLeaderboard(data) });
 });
 
+app.get('/api/profile/:username', (req, res) => {
+  const stored = findStoredUser(req.params.username);
+  if (!stored) return res.status(404).json({ error: 'profile not found' });
+  const data = loadChaseLeaderboard();
+  res.json({ ok: true, profile: profileFromLeaderboard(data, publicAuthUser(stored)), leaderboard: publicChaseLeaderboard(data) });
+});
+
+app.post('/api/profile/avatar', express.raw({ type: 'image/*', limit: '5mb' }), (req, res) => {
+  const current = authUser(req);
+  if (!current) return res.status(401).json({ error: 'login required' });
+  try {
+    const data = loadAuthUsers();
+    const stored = data.users.find(item => item.username.toLowerCase() === current.username.toLowerCase());
+    if (!stored) return res.status(404).json({ error: 'profile not found' });
+    stored.avatarUrl = saveProfileAvatar(req, stored);
+    stored.updatedAt = Date.now();
+    saveAuthUsers(data);
+    const leaderboard = loadChaseLeaderboard();
+    res.json({ ok: true, user: publicAuthUser(stored), profile: profileFromLeaderboard(leaderboard, publicAuthUser(stored)) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.post('/api/chase-leaderboard/score', (req, res) => {
   const user = authUser(req);
   if (!user) return res.status(401).json({ error: 'login required' });
@@ -546,6 +793,89 @@ app.post('/api/chase-leaderboard/score', (req, res) => {
   const leaderboard = publicChaseLeaderboard(data);
   io.emit('chase-leaderboard-updated', leaderboard);
   res.json({ ok: true, counted, run, leaderboard });
+});
+
+app.get('/api/lol-leaderboard', async (_req, res) => {
+  try {
+    res.json({ leaderboard: await refreshLinkedRiotScores() });
+  } catch {
+    res.json({ leaderboard: publicLolLeaderboard(loadLolLeaderboard()) });
+  }
+});
+
+app.get('/api/lol-account', (req, res) => {
+  const user = authUser(req);
+  if (!user) return res.status(401).json({ error: 'login required' });
+  const stored = findStoredUser(user.username);
+  res.json({ ok: true, riot: publicRiotLink(stored) });
+});
+
+app.post('/api/lol-account/link', async (req, res) => {
+  const current = authUser(req);
+  if (!current) return res.status(401).json({ error: 'login required' });
+  const gameName = cleanRiotPart(req.body?.gameName, 32);
+  const tagLine = cleanRiotPart(req.body?.tagLine, 12);
+  const region = cleanRiotRegion(req.body?.region);
+  if (!gameName || !tagLine) return res.status(400).json({ error: 'Riot ID and tag are required' });
+  const users = loadAuthUsers();
+  const stored = users.users.find(item => item.username.toLowerCase() === current.username.toLowerCase());
+  if (!stored) return res.status(404).json({ error: 'profile not found' });
+  try {
+    stored.riot = { gameName, tagLine, region, linkedAt: Date.now(), lastSyncedAt: 0 };
+    await syncLolScoreForUser(stored, { force: true });
+    saveAuthUsers(users);
+    const leaderboard = publicLolLeaderboard(loadLolLeaderboard());
+    io.emit('lol-leaderboard-updated', leaderboard);
+    res.json({ ok: true, riot: publicRiotLink(stored), leaderboard });
+  } catch (err) {
+    saveAuthUsers(users);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/lol-account/refresh', async (req, res) => {
+  const current = authUser(req);
+  if (!current) return res.status(401).json({ error: 'login required' });
+  const users = loadAuthUsers();
+  const stored = users.users.find(item => item.username.toLowerCase() === current.username.toLowerCase());
+  if (!stored?.riot?.gameName) return res.status(400).json({ error: 'link a Riot account first' });
+  try {
+    await syncLolScoreForUser(stored, { force: true });
+    saveAuthUsers(users);
+    const leaderboard = publicLolLeaderboard(loadLolLeaderboard());
+    io.emit('lol-leaderboard-updated', leaderboard);
+    res.json({ ok: true, riot: publicRiotLink(stored), leaderboard });
+  } catch (err) {
+    saveAuthUsers(users);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/lol-leaderboard/score', (req, res) => {
+  const user = authUser(req);
+  if (!user) return res.status(401).json({ error: 'login required' });
+  const gain = Math.max(-9999, Math.min(9999, Math.floor(Number(req.body?.gain) || 0)));
+  const data = loadLolLeaderboard();
+  const weekStart = startOfWeekMs();
+  const player = cleanPlayerName(user.username);
+  data.scores = Array.isArray(data.scores) ? data.scores : [];
+  const existing = data.scores.find(score => Number(score.weekStart) === weekStart && cleanPlayerName(score.player).toLowerCase() === player.toLowerCase());
+  if (existing) {
+    existing.gain = gain;
+    existing.updatedAt = Date.now();
+  } else {
+    data.scores.push({
+      id: `lol-${weekStart}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      player,
+      weekStart,
+      gain,
+      updatedAt: Date.now(),
+    });
+  }
+  saveLolLeaderboard(data);
+  const leaderboard = publicLolLeaderboard(data);
+  io.emit('lol-leaderboard-updated', leaderboard);
+  res.json({ ok: true, leaderboard });
 });
 
 app.post('/api/chase-leaderboard/runs/:id/invalidate', (req, res) => {

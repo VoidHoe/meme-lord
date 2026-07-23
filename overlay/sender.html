@@ -40,6 +40,7 @@
           <button class="tab" data-tab="chase"><span>⏱</span>Chase</button>
           <button class="tab" data-tab="facecam"><span>▥</span>Facecam</button>
           <button class="tab settings-tab" data-tab="settings"><span>⚙</span>Settings</button>
+          <button class="tab" data-tab="league"><span>LP</span>League</button>
           <button class="tab" data-tab="profile"><span>@</span>Profile</button>
         </nav>
         <div class="sidebar-note">Fast jokes.<br>Perfect timing.</div>
@@ -224,7 +225,7 @@
           <div class="profile-grid">
             <section class="settings-card profile-hero">
               <div class="profile-avatar" id="profile-avatar">?</div>
-              <div><h2 id="profile-name">Not logged in</h2><p id="profile-rank">No weekly rank yet</p></div>
+              <div><h2 id="profile-name">Not logged in</h2><p id="profile-rank">No weekly rank yet</p><button id="profile-avatar-change" class="ghost-btn" type="button">Change picture</button></div>
             </section>
             <section class="settings-card profile-stat"><span>Weekly best</span><strong id="profile-weekly-best">--:--.--</strong></section>
             <section class="settings-card profile-stat"><span>Weekly runs</span><strong id="profile-weekly-runs">0</strong></section>
@@ -236,6 +237,26 @@
             <section class="settings-card profile-wide">
               <div class="leaderboard-head"><h2>Weekly badges</h2><span>Top 3</span></div>
               <div id="profile-badges" class="badge-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel page-panel league-page" id="league-panel">
+          <div class="page-head"><div><h1>League</h1><p>Weekly League of Legends LP gain leaderboard.</p></div></div>
+          <div class="chase-settings">
+            <section class="settings-card">
+              <h2>Riot account</h2>
+              <label>Game name<input id="lol-game-name" class="field" type="text" maxlength="32" placeholder="Hide on bush" /></label>
+              <label>Tag<input id="lol-tag-line" class="field" type="text" maxlength="12" placeholder="EUW" /></label>
+              <label>Region<select id="lol-region" class="field"><option value="euw1">EU West</option><option value="eun1">EU Nordic & East</option><option value="na1">North America</option><option value="kr">Korea</option><option value="br1">Brazil</option><option value="jp1">Japan</option><option value="la1">LAN</option><option value="la2">LAS</option><option value="oc1">Oceania</option><option value="tr1">Turkey</option><option value="ru">Russia</option><option value="me1">Middle East</option></select></label>
+              <button id="lol-link" class="primary-btn" type="button">Link Riot account</button>
+              <button id="lol-refresh" class="ghost-btn" type="button">Refresh rank</button>
+              <div id="lol-status" class="setting-note">Link your Riot ID to track weekly LP gain automatically.</div>
+            </section>
+            <section class="settings-card chase-leaderboard-card">
+              <div class="leaderboard-head"><h2>Weekly LP leaderboard</h2><span id="lol-leaderboard-scope">Weekly</span></div>
+              <div id="lol-leaderboard" class="leaderboard-list"></div>
+              <p class="setting-note">Click a player to open their profile and badges.</p>
             </section>
           </div>
         </section>
