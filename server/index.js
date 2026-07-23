@@ -323,6 +323,7 @@ function weeklyPodiums(runs) {
 
 function profileFromLeaderboard(data, user) {
   const player = cleanPlayerName(user.username);
+  const storedUser = findStoredUser(user.username) || user;
   const now = Date.now();
   const weekStart = startOfWeekMs(now);
   const countedRuns = (data.runs || []).filter(run =>
@@ -345,14 +346,27 @@ function profileFromLeaderboard(data, user) {
         bestMs: item.bestMs,
         runs: item.runs,
       })));
+  const lolBoard = loadLolLeaderboard();
+  const lolScore = (lolBoard.scores || []).find(score =>
+    Number(score.weekStart) === weekStart &&
+    cleanPlayerName(score.player).toLowerCase() === player.toLowerCase()
+  );
   return {
-    user: publicAuthUser(user),
+    user: publicAuthUser(storedUser),
     stats: {
       totalRuns: countedRuns.length,
       allTimeBestMs: countedRuns.reduce((best, run) => Math.max(best, Number(run.durationMs) || 0), 0),
       weeklyRuns: weeklyRuns.length,
       weeklyBestMs: weeklyRuns.reduce((best, run) => Math.max(best, Number(run.durationMs) || 0), 0),
       currentWeekRank: currentRank >= 0 ? currentRank + 1 : null,
+    },
+    league: {
+      riot: publicRiotLink(storedUser),
+      weeklyGain: lolScore ? Math.floor(Number(lolScore.gain) || 0) : null,
+      baselineLp: lolScore ? finiteNumberOrNull(lolScore.baselineLp) : null,
+      currentLp: lolScore ? finiteNumberOrNull(lolScore.currentLp) : null,
+      rankLabel: lolScore?.rankLabel || storedUser?.riot?.rankLabel || null,
+      updatedAt: lolScore?.updatedAt || storedUser?.riot?.lastSyncedAt || null,
     },
     badges,
   };
@@ -428,6 +442,11 @@ function publicRiotLink(user) {
   };
 }
 
+function finiteNumberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function publicLolLeaderboard(data) {
   const weekStart = startOfWeekMs();
   const avatars = avatarLookup();
@@ -437,8 +456,8 @@ function publicLolLeaderboard(data) {
       name: cleanPlayerName(score.player),
       avatarUrl: avatars.get(cleanPlayerName(score.player).toLowerCase()) || null,
       gain: Math.floor(Number(score.gain) || 0),
-      baselineLp: Number(score.baselineLp) || null,
-      currentLp: Number(score.currentLp) || null,
+      baselineLp: finiteNumberOrNull(score.baselineLp),
+      currentLp: finiteNumberOrNull(score.currentLp),
       rankLabel: score.rankLabel || null,
       riotId: score.riotId || null,
       updatedAt: score.updatedAt || null,

@@ -669,6 +669,10 @@ async function loadProfile(username = '') {
     $('profile-weekly-best').textContent = '--:--.--';
     $('profile-weekly-runs').textContent = '0';
     $('profile-alltime-best').textContent = '--:--.--';
+    $('profile-riot-id').textContent = 'Not linked';
+    $('profile-weekly-lp').textContent = '-- LP';
+    $('profile-weekly-lp').className = 'lp-neutral';
+    $('profile-lol-rank').textContent = 'Unranked';
     boardEl.innerHTML = '<div class="leaderboard-empty">Log in to see the weekly board.</div>';
     badgesEl.innerHTML = '<div class="leaderboard-empty">No badges yet.</div>';
     return;
@@ -676,6 +680,7 @@ async function loadProfile(username = '') {
   const profile = result.profile || {};
   const user = profile.user || {};
   const stats = profile.stats || {};
+  const league = profile.league || {};
   const name = user.username || 'Player';
   $('profile-name').textContent = name;
   setAvatar(profileAvatar, name, user.avatarUrl);
@@ -684,6 +689,12 @@ async function loadProfile(username = '') {
   $('profile-weekly-best').textContent = stats.weeklyBestMs ? formatChaseMs(stats.weeklyBestMs) : '--:--.--';
   $('profile-weekly-runs').textContent = String(stats.weeklyRuns || 0);
   $('profile-alltime-best').textContent = stats.allTimeBestMs ? formatChaseMs(stats.allTimeBestMs) : '--:--.--';
+  $('profile-riot-id').textContent = league.riot?.label || 'Not linked';
+  const weeklyLp = league.weeklyGain;
+  const lpEl = $('profile-weekly-lp');
+  lpEl.textContent = Number.isFinite(Number(weeklyLp)) ? `${Number(weeklyLp) > 0 ? '+' : ''}${Math.floor(Number(weeklyLp))} LP` : '-- LP';
+  lpEl.className = Number(weeklyLp) > 0 ? 'lp-positive' : Number(weeklyLp) < 0 ? 'lp-negative' : 'lp-neutral';
+  $('profile-lol-rank').textContent = league.rankLabel || 'Unranked';
   renderLeaderboardRows(boardEl, result.leaderboard?.players || [], { mode: 'chase' });
   renderBadges(profile.badges || []);
 }
