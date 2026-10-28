@@ -306,51 +306,53 @@ async function processQueue() {
     container.style.animation = `fadeIn ${fadeInSeconds}s ease forwards`;
   }
 
-  // Determine playback behavior
+  // Determine playback behavior. Attached voice/SFX is scheduled by
+  // playbackPlan so a full video starts its sound with the picture.
   const isVideo       = mediaEl && mediaEl.tagName === 'VIDEO';
   const isEmbed       = mediaEl && mediaEl.tagName === 'IFRAME';
   const VIDEO_CAP_MS  = 120000;  // play full video, but never hog the overlay past 2 min
   const EMBED_FULL_MS = 120000;  // embeds can't report their end — give them a long window
+  const times         = Math.max(1, event.loopTimes || 1);
 
-  const times   = Math.max(1, event.loopTimes || 1);
-  const hasTrim = isVideo && event.trimEnd != null && event.trimEnd > (event.trimStart || 0);
-
-  if (hasTrim) {
-    // Play the trimmed segment [trimStart, trimEnd], repeated `times`
-    if (event.audio) playAudio(event.audio);
-    await playVideoSegment(mediaEl, event.trimStart || 0, event.trimEnd, times);
-  } else if (event.loop === true) {
-    // Legacy loop: first loopDuration seconds, repeated (kept for old history entries)
-    const segSecs = event.loopDuration || 10;
-    if (event.audio) playAudio(event.audio);
-    if (isVideo) {
-      await playVideoSegment(mediaEl, 0, segSecs, times);
-    } else {
-      await sleep(segSecs * times * 1000);
-    }
-  } else if (isVideo) {
-    // Play the whole video once
-    await new Promise(res => {
-      mediaEl.addEventListener('ended', res, { once: true });
-      setTimeout(res, VIDEO_CAP_MS);
-    });
-    if (event.audio) playAudio(event.audio);
-  } else if (isEmbed) {
-    // Play the whole embedded clip (best-effort fixed window).
-    if (event.audio) playAudio(event.audio);
-    // TikTok's embed is only the fallback when direct-video resolution fails, and
-    // it now shows just a cookie-consent wall with no playback. Cap it to the normal
-    // drop duration so it self-clears instead of pinning the overlay (and blocking
-    // the whole queue) for 2 min. YouTube/Twitter embeds do play → keep the long window.
-    const embedMs = (event.media && event.media.type === 'tiktok')
-      ? (settings.duration || 5000)
-      : EMBED_FULL_MS;
-    await sleep(embedMs);
-  } else {
-    // image / gif / emoji
-    if (event.audio) playAudio(event.audio);
-    await sleep(settings.duration || 5000);
-  }
+  await runDropTimeline(event, { isVideo, isEmbed }, {
+    playAudio: () => { playAudio(event.audio); },
+    wait: async (mode) => {
+      if (mode === 'trim') {
+        // Play the trimmed segment [trimStart, trimEnd], repeated `times`
+        await playVideoSegment(mediaEl, event.trimStart || 0, event.trimEnd, times);
+        return;
+      }
+      if (mode === 'loop') {
+        // Legacy loop: first loopDuration seconds, repeated (kept for old history entries)
+        const segSecs = event.loopDuration || 10;
+        if (isVideo) await playVideoSegment(mediaEl, 0, segSecs, times);
+        else await sleep(segSecs * times * 1000);
+        return;
+      }
+      if (mode === 'video') {
+        // Play the whole video once
+        await new Promise(res => {
+          mediaEl.addEventListener('ended', res, { once: true });
+          setTimeout(res, VIDEO_CAP_MS);
+        });
+        return;
+      }
+      if (mode === 'embed') {
+        // Play the whole embedded clip (best-effort fixed window).
+        // TikTok's embed is only the fallback when direct-video resolution fails, and
+        // it now shows just a cookie-consent wall with no playback. Cap it to the normal
+        // drop duration so it self-clears instead of pinning the overlay (and blocking
+        // the whole queue) for 2 min. YouTube/Twitter embeds do play → keep the long window.
+        const embedMs = (event.media && event.media.type === 'tiktok')
+          ? (settings.duration || 5000)
+          : EMBED_FULL_MS;
+        await sleep(embedMs);
+        return;
+      }
+      // image / gif / emoji
+      await sleep(settings.duration || 5000);
+    },
+  });
 
   // Fade out
   if (fadeOutSeconds) {
